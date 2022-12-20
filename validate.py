@@ -26,7 +26,7 @@ from timm.data import create_dataset, create_loader, resolve_data_config, RealLa
 from timm.utils import accuracy, AverageMeter, natural_key, setup_default_logging, set_jit_fuser,\
     decay_batch_step, check_batch_size_retry
 
-import metaformer_baselines
+import models
 
 has_apex = False
 try:

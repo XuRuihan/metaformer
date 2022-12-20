@@ -61,7 +61,7 @@ from timm.scheduler import create_scheduler
 # from timm.utils import ApexScaler, NativeScaler
 from utils import ApexScalerAccum as ApexScaler
 from utils import NativeScalerAccum as NativeScaler
-import metaformer_baselines
+import models
 
 try:
     from apex import amp
@@ -448,6 +448,7 @@ def main():
         create_model_args.update(head_dropout=args.head_dropout)
 
     model = create_model(**create_model_args)
+    _logger.info(str(model))
 
     if args.num_classes is None:
         assert hasattr(model, 'num_classes'), 'Model must have `num_classes` attr if not set on cmd line/config.'
