@@ -400,6 +400,145 @@ class ParC_V3(nn.Module):
         self,
         dim,
         expansion_ratio=2,
+        # act1_layer=nn.Identity,
+        # act2_layer=nn.GELU,
+        act1_layer=nn.GELU,
+        act2_layer=nn.Identity,
+        bias=False,
+        kernel_size=7,
+        global_kernel_size=14,
+        padding=3,
+        **kwargs,
+    ):
+        super().__init__()
+        med_channels = int(expansion_ratio * dim)
+        self.pwconv1 = nn.Linear(dim, med_channels, bias=bias)
+        self.act1 = act1_layer()
+        self.dwconv1 = OversizeConv2d(med_channels, global_kernel_size, bias)
+        self.dwconv2 = nn.Conv2d(
+            med_channels,
+            med_channels,
+            kernel_size=kernel_size,
+            padding=padding,
+            groups=med_channels,
+            bias=bias,
+        )  # depthwise conv
+        self.act2 = act2_layer()
+        self.pwconv2 = nn.Linear(med_channels // 2, dim, bias=bias)
+
+    def forward(self, x):
+        x = self.pwconv1(x)
+        # x = self.act1(x)
+        x1, x2 = x.chunk(2, -1)
+        x2 = self.act1(x2)
+        x = torch.cat([x1, x2], -1)
+        x = x.permute(0, 3, 1, 2)
+        x = self.dwconv1(x) + self.dwconv2(x)
+        x = x.permute(0, 2, 3, 1)
+        x1, x2 = x.chunk(2, -1)
+        x = x1 * self.act2(x2)
+        x = self.pwconv2(x)
+        return x
+
+
+class ParC_V3_add(nn.Module):
+    def __init__(
+        self,
+        dim,
+        expansion_ratio=2,
+        # act1_layer=nn.Identity,
+        # act2_layer=nn.GELU,
+        act1_layer=nn.GELU,
+        act2_layer=nn.Identity,
+        bias=False,
+        kernel_size=7,
+        global_kernel_size=14,
+        padding=3,
+        **kwargs,
+    ):
+        super().__init__()
+        med_channels = int(expansion_ratio * dim)
+        self.pwconv1 = nn.Conv2d(dim, med_channels, 1, bias=bias)
+        self.act1 = act1_layer()
+        self.dwconv1 = OversizeConv2d(med_channels, global_kernel_size, bias)
+        self.dwconv2 = nn.Conv2d(
+            med_channels,
+            med_channels,
+            kernel_size=kernel_size,
+            padding=padding,
+            groups=med_channels,
+            bias=bias,
+        )  # depthwise conv
+        self.act2 = act2_layer()
+        self.pwconv2 = nn.Conv2d(med_channels // 2, dim, 1, bias=bias)
+
+    def forward(self, x):
+        x = x.permute(0, 3, 1, 2)
+        x = self.pwconv1(x)
+        # x = self.act1(x)
+        x1, x2 = x.chunk(2, 1)
+        x2 = self.act1(x2)
+        x = torch.cat([x1, x2], 1)
+        x = self.dwconv1(x) + self.dwconv2(x)
+        x1, x2 = x.chunk(2, 1)
+        x = x1 * self.act2(x2)
+        x = self.pwconv2(x)
+        x = x.permute(0, 2, 3, 1)
+        return x
+
+
+class ParC_V3_cat(nn.Module):
+    def __init__(
+        self,
+        dim,
+        expansion_ratio=2,
+        # act1_layer=nn.Identity,
+        # act2_layer=nn.GELU,
+        act1_layer=nn.GELU,
+        act2_layer=nn.Identity,
+        bias=False,
+        kernel_size=7,
+        global_kernel_size=14,
+        padding=3,
+        **kwargs,
+    ):
+        super().__init__()
+        med_channels = int(expansion_ratio * dim)
+        self.pwconv1 = nn.Conv2d(dim, med_channels, 1, bias=bias)
+        self.act1 = act1_layer()
+        self.dwconv1 = OversizeConv2d(med_channels // 2, global_kernel_size, bias)
+        self.dwconv2 = nn.Conv2d(
+            med_channels // 2,
+            med_channels // 2,
+            kernel_size=kernel_size,
+            padding=padding,
+            groups=med_channels // 2,
+            bias=bias,
+        )  # depthwise conv
+        self.act2 = act2_layer()
+        self.pwconv2 = nn.Conv2d(med_channels // 2, dim, 1, bias=bias)
+
+    def forward(self, x):
+        x = x.permute(0, 3, 1, 2)
+        x = self.pwconv1(x)
+        # x = self.act1(x)
+        x1_1, x1_2, x2_1, x2_2 = x.chunk(4, 1)
+        x1_2, x2_2 = self.act1(x1_2), self.act1(x2_2)
+        x1_1, x1_2 = self.dwconv1(torch.cat([x1_1, x1_2], 1)).chunk(2, 1)
+        x2_1, x2_2 = self.dwconv2(torch.cat([x2_1, x2_2], 1)).chunk(2, 1)
+        x1 = x1_1 * self.act2(x1_2)
+        x2 = x2_1 * self.act2(x2_2)
+        x = torch.cat([x1, x2], 1)
+        x = self.pwconv2(x)
+        x = x.permute(0, 2, 3, 1)
+        return x
+
+
+class ParC_V4(nn.Module):
+    def __init__(
+        self,
+        dim,
+        expansion_ratio=3,
         act1_layer=nn.Identity,
         act2_layer=nn.GELU,
         bias=False,
@@ -411,7 +550,15 @@ class ParC_V3(nn.Module):
         med_channels = int(expansion_ratio * dim)
         self.pwconv1 = nn.Linear(dim, med_channels, bias=bias)
         self.act1 = act1_layer()
-        self.dwconv = OversizeConv2d(med_channels, kernel_size, bias)
+        # self.dwconv = OversizeConv2d(med_channels, kernel_size, bias)
+        self.dwconv = nn.Conv2d(
+            med_channels,
+            med_channels,
+            kernel_size=kernel_size,
+            padding=padding,
+            groups=med_channels,
+            bias=bias,
+        )  # depthwise conv
         self.act2 = act2_layer()
         self.pwconv2 = nn.Linear(med_channels // 2, dim, bias=bias)
 
@@ -421,8 +568,8 @@ class ParC_V3(nn.Module):
         x = x.permute(0, 3, 1, 2)
         x = self.dwconv(x)
         x = x.permute(0, 2, 3, 1)
-        x1, x2 = x.chunk(2, -1)
-        x = x1 * self.act2(x2)
+        x1, x2, x3 = x.chunk(3, -1)
+        x = x1 + x2 * self.act2(x3)
         x = self.pwconv2(x)
         return x
 
@@ -635,6 +782,7 @@ class MetaFormerBlock(nn.Module):
         self,
         dim,
         token_mixer=nn.Identity,
+        global_kernel_size=14,
         mlp=Mlp,
         norm_layer=nn.LayerNorm,
         drop=0.0,
@@ -646,7 +794,7 @@ class MetaFormerBlock(nn.Module):
         super().__init__()
 
         self.norm1 = norm_layer(dim)
-        self.token_mixer = token_mixer(dim=dim, drop=drop)
+        self.token_mixer = token_mixer(dim=dim, drop=drop, global_kernel_size=global_kernel_size)
         self.drop_path1 = DropPath(drop_path) if drop_path > 0.0 else nn.Identity()
         self.layer_scale1 = (
             Scale(dim=dim, init_value=layer_scale_init_value)
@@ -741,6 +889,7 @@ class MetaFormer(nn.Module):
         dims=[64, 128, 320, 512],
         downsample_layers=DOWNSAMPLE_LAYERS_FOUR_STAGES,
         token_mixers=nn.Identity,
+        global_kernel_sizes=[111, 55, 27, 13],
         mlps=Mlp,
         norm_layers=partial(LayerNormGeneral, eps=1e-6, bias=False),
         drop_path_rate=0.0,
@@ -798,6 +947,7 @@ class MetaFormer(nn.Module):
                     MetaFormerBlock(
                         dim=dims[i],
                         token_mixer=token_mixers[i],
+                        global_kernel_size=global_kernel_sizes[i],
                         mlp=mlps[i],
                         norm_layer=norm_layers[i],
                         drop_path=dp_rates[cur + j],
@@ -842,10 +992,10 @@ class MetaFormer(nn.Module):
 
 
 @register_model
-def convformer_xs12(pretrained=False, **kwargs):
+def convformer_s12(pretrained=False, **kwargs):
     model = MetaFormer(
         depths=[2, 2, 6, 2],
-        dims=[32, 64, 160, 256],
+        dims=[64, 128, 320, 512],
         token_mixers=SepConv,
         head_fn=MlpHead,
         **kwargs,
@@ -860,11 +1010,29 @@ def convformer_xs12(pretrained=False, **kwargs):
 
 
 @register_model
-def parcnet_v3_xs12(pretrained=False, **kwargs):
+def caformer_s12(pretrained=False, **kwargs):
     model = MetaFormer(
         depths=[2, 2, 6, 2],
-        dims=[32, 64, 160, 256],
-        token_mixers=ParC_V3,
+        dims=[64, 128, 320, 512],
+        token_mixers=[SepConv, SepConv, Attention, Attention],
+        head_fn=MlpHead,
+        **kwargs,
+    )
+    model.default_cfg = default_cfgs["caformer_s18"]
+    if pretrained:
+        state_dict = torch.hub.load_state_dict_from_url(
+            url=model.default_cfg["url"], map_location="cpu", check_hash=True
+        )
+        model.load_state_dict(state_dict)
+    return model
+
+
+@register_model
+def parcnet_v3_s12(pretrained=False, **kwargs):
+    model = MetaFormer(
+        depths=[2, 2, 6, 2],
+        dims=[64, 128, 320, 512],
+        token_mixers=ParC_V3_add,
         head_fn=MlpHead,
         **kwargs,
     )
@@ -878,15 +1046,33 @@ def parcnet_v3_xs12(pretrained=False, **kwargs):
 
 
 @register_model
-def parcnet_v3_xs12_384(pretrained=False, **kwargs):
+def parcnet_v3_s12_384(pretrained=False, **kwargs):
     model = MetaFormer(
         depths=[2, 2, 6, 2],
-        dims=[32, 64, 160, 256],
-        token_mixers=ParC_V3,
+        dims=[64, 128, 320, 512],
+        token_mixers=ParC_V3_add,
         head_fn=MlpHead,
         **kwargs,
     )
     model.default_cfg = default_cfgs["convformer_s18_384"]
+    if pretrained:
+        state_dict = torch.hub.load_state_dict_from_url(
+            url=model.default_cfg["url"], map_location="cpu", check_hash=True
+        )
+        model.load_state_dict(state_dict)
+    return model
+
+
+@register_model
+def parcnet_v3_s18(pretrained=False, **kwargs):
+    model = MetaFormer(
+        depths=[3, 3, 9, 3],
+        dims=[64, 128, 320, 512],
+        token_mixers=ParC_V3_add,
+        head_fn=MlpHead,
+        **kwargs,
+    )
+    model.default_cfg = default_cfgs["convformer_s18"]
     if pretrained:
         state_dict = torch.hub.load_state_dict_from_url(
             url=model.default_cfg["url"], map_location="cpu", check_hash=True

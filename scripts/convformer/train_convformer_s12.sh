@@ -12,7 +12,7 @@ cd $CODE_PATH && CUDA_VISIBLE_DEVICES=0,1,2,3 python3 -m torch.distributed.launc
 --nproc_per_node=$NUM_GPU \
 --master_port=$MASTER_PORT \
 train.py $DATA_PATH \
---model convformer_xs12 --opt adamw --lr 4e-3 --warmup-epochs 20 \
+--model convformer_s12 --opt adamw --lr 4e-3 --warmup-epochs 20 \
 -b $BATCH_SIZE --grad-accum-steps $GRAD_ACCUM_STEPS \
 --drop-path 0.2 --head-dropout 0.0 \
-> log/convformer_xs12.log 2>&1
+> log/convformer_s12.log 2>&1
