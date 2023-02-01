@@ -282,7 +282,7 @@ class Attention(nn.Module):
         super().__init__()
 
         self.head_dim = head_dim
-        self.scale = head_dim**-0.5
+        self.scale = head_dim ** -0.5
 
         self.num_heads = num_heads if num_heads else dim // head_dim
         if self.num_heads == 0:
@@ -400,6 +400,7 @@ class ParC_V3(nn.Module):
 
     `nn.Linear` (67ms) version is faster than the `nn.Conv2d` version (77ms)
     """
+
     def __init__(
         self,
         dim,
@@ -448,6 +449,7 @@ class ParC_V3_add(nn.Module):
 
     `nn.Conv2d` (141ms) version is faster than the `nn.Linear` version (184ms)
     """
+
     def __init__(
         self,
         dim,
@@ -498,6 +500,7 @@ class ParC_V3_cat(nn.Module):
 
     bad performance. (< 7x7)
     """
+
     def __init__(
         self,
         dim,
@@ -838,7 +841,9 @@ class MetaFormerBlock(nn.Module):
         super().__init__()
 
         self.norm1 = norm_layer(dim)
-        self.token_mixer = token_mixer(dim=dim, drop=drop, global_kernel_size=global_kernel_size)
+        self.token_mixer = token_mixer(
+            dim=dim, drop=drop, global_kernel_size=global_kernel_size
+        )
         self.drop_path1 = DropPath(drop_path) if drop_path > 0.0 else nn.Identity()
         self.layer_scale1 = (
             Scale(dim=dim, init_value=layer_scale_init_value)
@@ -881,24 +886,28 @@ downsamplings for the last 3 stages is a layer of conv with k3, s2 and p1
 DOWNSAMPLE_LAYERS_FOUR_STAGES format: [Downsampling, Downsampling, Downsampling, Downsampling]
 use `partial` to specify some arguments
 """
-DOWNSAMPLE_LAYERS_FOUR_STAGES = [
-    partial(
-        Downsampling,
-        kernel_size=7,
-        stride=4,
-        padding=2,
-        post_norm=partial(LayerNormGeneral, bias=False, eps=1e-6),
-    )
-] + [
-    partial(
-        Downsampling,
-        kernel_size=3,
-        stride=2,
-        padding=1,
-        pre_norm=partial(LayerNormGeneral, bias=False, eps=1e-6),
-        pre_permute=True,
-    )
-] * 3
+DOWNSAMPLE_LAYERS_FOUR_STAGES = (
+    [
+        partial(
+            Downsampling,
+            kernel_size=7,
+            stride=4,
+            padding=2,
+            post_norm=partial(LayerNormGeneral, bias=False, eps=1e-6),
+        )
+    ]
+    + [
+        partial(
+            Downsampling,
+            kernel_size=3,
+            stride=2,
+            padding=1,
+            pre_norm=partial(LayerNormGeneral, bias=False, eps=1e-6),
+            pre_permute=True,
+        )
+    ]
+    * 3
+)
 
 
 class MetaFormer(nn.Module):

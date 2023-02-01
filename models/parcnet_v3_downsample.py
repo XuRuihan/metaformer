@@ -284,7 +284,7 @@ class Attention(nn.Module):
         super().__init__()
 
         self.head_dim = head_dim
-        self.scale = head_dim**-0.5
+        self.scale = head_dim ** -0.5
 
         self.num_heads = num_heads if num_heads else dim // head_dim
         if self.num_heads == 0:
@@ -828,7 +828,9 @@ class MetaFormerBlock(nn.Module):
         super().__init__()
 
         self.norm1 = norm_layer(dim)
-        self.token_mixer = token_mixer(dim=dim, drop=drop, global_kernel_size=global_kernel_size)
+        self.token_mixer = token_mixer(
+            dim=dim, drop=drop, global_kernel_size=global_kernel_size
+        )
         self.drop_path1 = DropPath(drop_path) if drop_path > 0.0 else nn.Identity()
         self.layer_scale1 = (
             Scale(dim=dim, init_value=layer_scale_init_value)
@@ -872,44 +874,52 @@ DOWNSAMPLE_LAYERS_FOUR_STAGES format: [Downsampling, Downsampling, Downsampling,
 use `partial` to specify some arguments
 """
 # MetaFormer
-DOWNSAMPLE_LAYERS_FOUR_STAGES = [
-    partial(
-        Downsampling,
-        kernel_size=7,
-        stride=4,
-        padding=2,
-        post_norm=partial(LayerNormGeneral, bias=False, eps=1e-6),
-    )
-] + [
-    partial(
-        Downsampling,
-        kernel_size=3,
-        stride=2,
-        padding=1,
-        pre_norm=partial(LayerNormGeneral, bias=False, eps=1e-6),
-        pre_permute=True,
-    )
-] * 3
+DOWNSAMPLE_LAYERS_FOUR_STAGES = (
+    [
+        partial(
+            Downsampling,
+            kernel_size=7,
+            stride=4,
+            padding=2,
+            post_norm=partial(LayerNormGeneral, bias=False, eps=1e-6),
+        )
+    ]
+    + [
+        partial(
+            Downsampling,
+            kernel_size=3,
+            stride=2,
+            padding=1,
+            pre_norm=partial(LayerNormGeneral, bias=False, eps=1e-6),
+            pre_permute=True,
+        )
+    ]
+    * 3
+)
 # MetaFormer_group4
-DOWNSAMPLE_LAYERS_FOUR_STAGES_GROUP = [
-    partial(
-        Downsampling,
-        kernel_size=7,
-        stride=4,
-        padding=2,
-        post_norm=partial(LayerNormGeneral, bias=False, eps=1e-6),
-    )
-] + [
-    partial(
-        Downsampling,
-        kernel_size=4,
-        stride=2,
-        padding=1,
-        groups=4,
-        pre_norm=partial(LayerNormGeneral, bias=False, eps=1e-6),
-        pre_permute=True,
-    )
-] * 3
+DOWNSAMPLE_LAYERS_FOUR_STAGES_GROUP = (
+    [
+        partial(
+            Downsampling,
+            kernel_size=7,
+            stride=4,
+            padding=2,
+            post_norm=partial(LayerNormGeneral, bias=False, eps=1e-6),
+        )
+    ]
+    + [
+        partial(
+            Downsampling,
+            kernel_size=4,
+            stride=2,
+            padding=1,
+            groups=4,
+            pre_norm=partial(LayerNormGeneral, bias=False, eps=1e-6),
+            pre_permute=True,
+        )
+    ]
+    * 3
+)
 
 
 class MetaFormer(nn.Module):
