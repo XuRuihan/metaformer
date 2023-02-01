@@ -654,7 +654,7 @@ class SepConv(nn.Module):
     def __init__(
         self,
         dim,
-        expansion_ratio=2,
+        expansion_ratio=1.5,
         act1_layer=nn.GELU,
         act2_layer=nn.Identity,
         bias=False,
@@ -784,7 +784,7 @@ class MlpHead(nn.Module):
         self,
         dim,
         num_classes=1000,
-        mlp_ratio=4,
+        mlp_ratio=2,
         act_layer=nn.GELU,
         norm_layer=nn.LayerNorm,
         head_dropout=0.0,
@@ -1047,104 +1047,14 @@ class MetaFormer(nn.Module):
 
 
 @register_model
-def convformer_s12(pretrained=False, **kwargs):
-    model = MetaFormer(
-        depths=[2, 2, 6, 2],
-        dims=[64, 128, 320, 512],
-        token_mixers=SepConv,
-        head_fn=MlpHead,
-        **kwargs,
-    )
-    model.default_cfg = default_cfgs["convformer_s18"]
-    if pretrained:
-        state_dict = torch.hub.load_state_dict_from_url(
-            url=model.default_cfg["url"], map_location="cpu", check_hash=True
-        )
-        model.load_state_dict(state_dict)
-    return model
-
-
-@register_model
-def caformer_s12(pretrained=False, **kwargs):
-    model = MetaFormer(
-        depths=[2, 2, 6, 2],
-        dims=[64, 128, 320, 512],
-        token_mixers=[SepConv, SepConv, Attention, Attention],
-        head_fn=MlpHead,
-        **kwargs,
-    )
-    model.default_cfg = default_cfgs["caformer_s18"]
-    if pretrained:
-        state_dict = torch.hub.load_state_dict_from_url(
-            url=model.default_cfg["url"], map_location="cpu", check_hash=True
-        )
-        model.load_state_dict(state_dict)
-    return model
-
-
-@register_model
-def parcnet_v3_s12(pretrained=False, **kwargs):
-    model = MetaFormer(
-        depths=[2, 2, 6, 2],
-        dims=[64, 128, 320, 512],
-        token_mixers=ParC_V3_add,
-        head_fn=MlpHead,
-        **kwargs,
-    )
-    model.default_cfg = default_cfgs["convformer_s18"]
-    if pretrained:
-        state_dict = torch.hub.load_state_dict_from_url(
-            url=model.default_cfg["url"], map_location="cpu", check_hash=True
-        )
-        model.load_state_dict(state_dict)
-    return model
-
-
-@register_model
-def parcnet_v3_s12_384(pretrained=False, **kwargs):
-    model = MetaFormer(
-        depths=[2, 2, 6, 2],
-        dims=[64, 128, 320, 512],
-        token_mixers=ParC_V3_add,
-        head_fn=MlpHead,
-        **kwargs,
-    )
-    model.default_cfg = default_cfgs["convformer_s18_384"]
-    if pretrained:
-        state_dict = torch.hub.load_state_dict_from_url(
-            url=model.default_cfg["url"], map_location="cpu", check_hash=True
-        )
-        model.load_state_dict(state_dict)
-    return model
-
-
-@register_model
-def parcnet_v3_s18(pretrained=False, **kwargs):
-    model = MetaFormer(
-        depths=[3, 3, 9, 3],
-        dims=[64, 128, 320, 512],
-        token_mixers=ParC_V3_add,
-        mlps=Mlp,
-        head_fn=MlpHead,
-        **kwargs,
-    )
-    model.default_cfg = default_cfgs["convformer_s18"]
-    if pretrained:
-        state_dict = torch.hub.load_state_dict_from_url(
-            url=model.default_cfg["url"], map_location="cpu", check_hash=True
-        )
-        model.load_state_dict(state_dict)
-    return model
-
-
-@register_model
 def parcnet_v3_bgu_s18(pretrained=False, **kwargs):
     model = MetaFormer(
         depths=[3, 3, 9, 3],
-        dims=[96, 192, 432, 640],
+        dims=[96, 192, 432, 672],
         # dims=[80, 160, 480, 640],
         downsample_layers=DOWNSAMPLE_LAYERS_FOUR_STAGES_GROUP,
-        token_mixers=[ParC_V3, ParC_V3_add, ParC_V3_add, ParC_V3_add],
+        token_mixers=ParC_V3,
+        # token_mixers=[ParC_V3, ParC_V3_add, ParC_V3_add, ParC_V3_add],
         mlps=BGU,
         head_fn=MlpHead,
         **kwargs,

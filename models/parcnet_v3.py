@@ -396,6 +396,10 @@ class OversizeConv2d(nn.Module):
 
 
 class ParC_V3(nn.Module):
+    """ParC_V3 (without oversize convolution)
+
+    `nn.Linear` (67ms) version is faster than the `nn.Conv2d` version (77ms)
+    """
     def __init__(
         self,
         dim,
@@ -406,7 +410,6 @@ class ParC_V3(nn.Module):
         act2_layer=nn.Identity,
         bias=False,
         kernel_size=7,
-        global_kernel_size=14,
         padding=3,
         **kwargs,
     ):
@@ -414,8 +417,7 @@ class ParC_V3(nn.Module):
         med_channels = int(expansion_ratio * dim)
         self.pwconv1 = nn.Linear(dim, med_channels, bias=bias)
         self.act1 = act1_layer()
-        self.dwconv1 = OversizeConv2d(med_channels, global_kernel_size, bias)
-        self.dwconv2 = nn.Conv2d(
+        self.dwconv = nn.Conv2d(
             med_channels,
             med_channels,
             kernel_size=kernel_size,
@@ -433,7 +435,7 @@ class ParC_V3(nn.Module):
         x2 = self.act1(x2)
         x = torch.cat([x1, x2], -1)
         x = x.permute(0, 3, 1, 2)
-        x = self.dwconv1(x) + self.dwconv2(x)
+        x = self.dwconv(x)
         x = x.permute(0, 2, 3, 1)
         x1, x2 = x.chunk(2, -1)
         x = x1 * self.act2(x2)
@@ -442,6 +444,10 @@ class ParC_V3(nn.Module):
 
 
 class ParC_V3_add(nn.Module):
+    """ParC_V3 (7x7 add oversize convolution)
+
+    `nn.Conv2d` (141ms) version is faster than the `nn.Linear` version (184ms)
+    """
     def __init__(
         self,
         dim,
@@ -488,6 +494,10 @@ class ParC_V3_add(nn.Module):
 
 
 class ParC_V3_cat(nn.Module):
+    """ParC_V3 (7x7 cat oversize convolution)
+
+    bad performance. (< 7x7)
+    """
     def __init__(
         self,
         dim,
@@ -654,7 +664,7 @@ class SepConv(nn.Module):
     def __init__(
         self,
         dim,
-        expansion_ratio=2,
+        expansion_ratio=1.5,
         act1_layer=nn.GELU,
         act2_layer=nn.Identity,
         bias=False,
@@ -738,6 +748,40 @@ class Mlp(nn.Module):
         x = self.fc1(x)
         x = self.act(x)
         x = self.drop1(x)
+        x = self.fc2(x)
+        x = self.drop2(x)
+        return x
+
+
+class BGU(nn.Module):
+    def __init__(
+        self,
+        dim,
+        mlp_ratio=5,
+        out_features=None,
+        act_layer=nn.GELU,
+        drop=0.0,
+        bias=False,
+        **kwargs,
+    ):
+        super().__init__()
+        in_features = dim
+        out_features = out_features or in_features
+        hidden_features = int(mlp_ratio * in_features)
+        drop_probs = to_2tuple(drop)
+
+        self.fc1 = nn.Linear(in_features, hidden_features, bias=bias)
+        self.act = act_layer()
+        self.drop1 = nn.Dropout(drop_probs[0])
+        self.fc2 = nn.Linear(hidden_features // 2, out_features, bias=bias)
+        self.drop2 = nn.Dropout(drop_probs[1])
+
+    def forward(self, x):
+        x = self.fc1(x)
+        x = self.act(x)
+        x = self.drop1(x)
+        x1, x2 = x.chunk(2, -1)
+        x = x1 * x2
         x = self.fc2(x)
         x = self.drop2(x)
         return x
@@ -1079,3 +1123,24 @@ def parcnet_v3_s18(pretrained=False, **kwargs):
         )
         model.load_state_dict(state_dict)
     return model
+
+
+@register_model
+def parcnet_v2_cvpr(pretrained=False, **kwargs):
+    model = MetaFormer(
+        depths=[3, 3, 12, 3],
+        dims=[64, 128, 320, 512],
+        # token_mixers=ParC_V3,
+        token_mixers=ParC_V3_add,
+        # token_mixers=[ParC_V3, ParC_V3_add, ParC_V3_add, ParC_V3_add],
+        mlps=BGU,
+        **kwargs,
+    )
+    model.default_cfg = default_cfgs["convformer_s18"]
+    if pretrained:
+        state_dict = torch.hub.load_state_dict_from_url(
+            url=model.default_cfg["url"], map_location="cpu", check_hash=True
+        )
+        model.load_state_dict(state_dict)
+    return model
+

@@ -1,4 +1,9 @@
 import torch
+
+import sys
+
+sys.path.extend([".", ".."])
+
 from models import convnext_xt, convnext_xt_nobottleneck
 
 
@@ -15,7 +20,7 @@ def torchprofile_benchmark(model):
 def ptflops_benchmark(model):
     from ptflops import get_model_complexity_info
 
-    with torch.cuda.device(3):
+    with torch.cuda.device(0):
         macs, params = get_model_complexity_info(
             model, (3, 224, 224), as_strings=True, print_per_layer_stat=True, verbose=True
         )
