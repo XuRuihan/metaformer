@@ -8,7 +8,7 @@ import sys
 
 sys.path.extend([".", ".."])
 
-from models.parcnet_v3_downsample import parcnet_v3_bgu_s18
+from models.parcnet_v3_bgu import parcnet_v3_bgu_s18
 from models.parcnet_v3 import parcnet_v2_cvpr
 from models.swin import swin_tiny
 from models.convnext import convnext_tiny

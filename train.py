@@ -448,7 +448,6 @@ def main():
         create_model_args.update(head_dropout=args.head_dropout)
 
     model = create_model(**create_model_args)
-    _logger.info(str(model))
 
     if args.num_classes is None:
         assert hasattr(model, 'num_classes'), 'Model must have `num_classes` attr if not set on cmd line/config.'
@@ -458,6 +457,7 @@ def main():
         model.set_grad_checkpointing(enable=True)
 
     if args.local_rank == 0:
+        _logger.info(str(model))
         _logger.info(
             f'Model {safe_model_name(args.model)} created, param count:{sum([m.numel() for m in model.parameters()])}')
 

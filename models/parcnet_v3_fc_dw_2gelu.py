@@ -20,6 +20,7 @@ Some implementations are modified from timm (https://github.com/rwightman/pytorc
 from functools import partial
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 from timm.models.layers import trunc_normal_, DropPath
 from timm.models.registry import register_model
 from timm.data import IMAGENET_DEFAULT_MEAN, IMAGENET_DEFAULT_STD
@@ -180,7 +181,6 @@ class Downsampling(nn.Module):
         kernel_size,
         stride=1,
         padding=0,
-        groups=1,
         pre_norm=None,
         post_norm=None,
         pre_permute=False,
@@ -194,7 +194,6 @@ class Downsampling(nn.Module):
             kernel_size=kernel_size,
             stride=stride,
             padding=padding,
-            groups=groups,
         )
         self.post_norm = post_norm(out_channels) if post_norm else nn.Identity()
 
@@ -204,71 +203,6 @@ class Downsampling(nn.Module):
             # if take [B, H, W, C] as input, permute it to [B, C, H, W]
             x = x.permute(0, 3, 1, 2)
         x = self.conv(x)
-        x = x.permute(0, 2, 3, 1)  # [B, C, H, W] -> [B, H, W, C]
-        x = self.post_norm(x)
-        return x
-
-
-class Conv2d_BN(torch.nn.Sequential):
-    def __init__(self, a, b, ks=1, stride=1, pad=0, dilation=1,
-                 groups=1, bn_weight_init=1):
-        super().__init__()
-        self.add_module('c', torch.nn.Conv2d(
-            a, b, ks, stride, pad, dilation, groups, bias=False))
-        bn = torch.nn.BatchNorm2d(b)
-        torch.nn.init.constant_(bn.weight, bn_weight_init)
-        torch.nn.init.constant_(bn.bias, 0)
-        self.add_module('bn', bn)
-
-    @torch.no_grad()
-    def fuse(self):
-        c, bn = self._modules.values()
-        w = bn.weight / (bn.running_var + bn.eps)**0.5
-        w = c.weight * w[:, None, None, None]
-        b = bn.bias - bn.running_mean * bn.weight / \
-            (bn.running_var + bn.eps)**0.5
-        m = torch.nn.Conv2d(w.size(1) * self.c.groups, w.size(
-            0), w.shape[2:], stride=self.c.stride, padding=self.c.padding, dilation=self.c.dilation, groups=self.c.groups)
-        m.weight.data.copy_(w)
-        m.bias.data.copy_(b)
-        return m
-
-
-class PatchMerging(nn.Module):
-    def __init__(
-        self,
-        in_channels,
-        out_channels,
-        kernel_size,
-        stride=1,
-        padding=0,
-        groups=1,
-        pre_norm=None,
-        post_norm=None,
-        pre_permute=False,
-        activation=nn.GELU,
-    ):
-        super().__init__()
-        self.pre_norm = pre_norm(in_channels) if pre_norm else nn.Identity()
-        self.pre_permute = pre_permute
-
-        self.act = activation()
-        self.conv1 = Conv2d_BN(in_channels, out_channels, 1, 1, 0)
-        self.conv2 = Conv2d_BN(out_channels, out_channels, kernel_size, stride, padding, groups=out_channels)
-        self.conv3 = Conv2d_BN(out_channels, out_channels, 1, 1, 0)
-
-        self.post_norm = post_norm(out_channels) if post_norm else nn.Identity()
-
-    def forward(self, x):
-        x = self.pre_norm(x)
-        if self.pre_permute:
-            # if take [B, H, W, C] as input, permute it to [B, C, H, W]
-            x = x.permute(0, 3, 1, 2)
-        x = self.conv1(x)
-        x = self.act(x)
-        x = self.conv2(x)
-        x = self.act(x)
-        x = self.conv3(x)
         x = x.permute(0, 2, 3, 1)  # [B, C, H, W] -> [B, H, W, C]
         x = self.post_norm(x)
         return x
@@ -348,7 +282,7 @@ class Attention(nn.Module):
         super().__init__()
 
         self.head_dim = head_dim
-        self.scale = head_dim**-0.5
+        self.scale = head_dim ** -0.5
 
         self.num_heads = num_heads if num_heads else dim // head_dim
         if self.num_heads == 0:
@@ -378,6 +312,300 @@ class Attention(nn.Module):
         x = (attn @ v).transpose(1, 2).reshape(B, H, W, self.attention_dim)
         x = self.proj(x)
         x = self.proj_drop(x)
+        return x
+
+
+class OversizeConv2d(nn.Module):
+    def __init__(self, dim, kernel_size, bias=True, interpolate=False):
+        super().__init__()
+
+        if interpolate is True:
+            padding = 0
+        elif interpolate is False or interpolate is None:
+            assert kernel_size % 2 == 1
+            padding = kernel_size // 2
+        else:
+            print(interpolate)
+            assert interpolate % 2 == 1
+            padding = interpolate // 2
+            interpolate = to_2tuple(interpolate)
+
+        self.conv_h = nn.Conv2d(
+            dim, dim, (kernel_size, 1), padding=(padding, 0), groups=dim, bias=bias
+        )
+        self.conv_w = nn.Conv2d(
+            dim, dim, (1, kernel_size), padding=(0, padding), groups=dim, bias=bias
+        )
+
+        self.dim = dim
+        self.kernel_size = kernel_size
+        self.interpolate = interpolate
+        self.padding = padding
+
+    def get_instance_kernel(self, instance_kernel_size):
+        h_weight = F.interpolate(
+            self.conv_h.weight,
+            [instance_kernel_size[0], 1],
+            mode="bilinear",
+            align_corners=True,
+        )
+        w_weight = F.interpolate(
+            self.conv_w.weight,
+            [1, instance_kernel_size[1]],
+            mode="bilinear",
+            align_corners=True,
+        )
+        return h_weight, w_weight
+
+    def forward(self, x):
+        if self.interpolate is True:
+            H, W = x.shape[-2:]
+            instance_kernel_size = 2 * H - 1, 2 * W - 1
+            h_weight, w_weight = self.get_instance_kernel(instance_kernel_size)
+
+            padding = H - 1, W - 1
+            x = F.conv2d(
+                x, h_weight, self.conv_h.bias, padding=(padding[0], 0), groups=self.dim
+            )
+            x = F.conv2d(
+                x, w_weight, self.conv_w.bias, padding=(0, padding[1]), groups=self.dim
+            )
+        elif isinstance(self.interpolate, tuple):
+            h_weight, w_weight = self.get_instance_kernel(self.interpolate)
+            x = F.conv2d(
+                x,
+                h_weight,
+                self.conv_h.bias,
+                padding=(self.padding, 0),
+                groups=self.dim,
+            )
+            x = F.conv2d(
+                x,
+                w_weight,
+                self.conv_w.bias,
+                padding=(0, self.padding),
+                groups=self.dim,
+            )
+        else:
+            x = self.conv_h(x)
+            x = self.conv_w(x)
+        return x
+
+    def extra_repr(self):
+        return f"dim={self.dim}, kernel_size={self.kernel_size}"
+
+
+class ParC_V3(nn.Module):
+    def __init__(
+        self,
+        dim,
+        expansion_ratio=2,
+        # act1_layer=nn.Identity,
+        # act2_layer=nn.GELU,
+        act1_layer=nn.GELU,
+        act2_layer=nn.Identity,
+        bias=False,
+        kernel_size=7,
+        padding=3,
+        **kwargs,
+    ):
+        super().__init__()
+        med_channels = int(expansion_ratio * dim)
+        self.pwconv1 = nn.Linear(dim, med_channels, bias=bias)
+        self.act1 = act1_layer()
+        self.dwconv = nn.Conv2d(
+            med_channels,
+            med_channels,
+            kernel_size=kernel_size,
+            padding=padding,
+            groups=med_channels,
+            bias=bias,
+        )  # depthwise conv
+        self.act2 = act2_layer()
+        self.pwconv2 = nn.Linear(med_channels // 2, dim, bias=bias)
+
+    def forward(self, x):
+        x = self.pwconv1(x)
+        x = x.permute(0, 3, 1, 2)
+        x = self.dwconv(x)
+        x = x.permute(0, 2, 3, 1)
+        x = self.act1(x)
+        x1, x2 = x.chunk(2, -1)
+        x = x1 * self.act2(x2)
+        x = self.pwconv2(x)
+        return x
+
+
+class ParC_V3_add(nn.Module):
+    def __init__(
+        self,
+        dim,
+        expansion_ratio=2,
+        act1_layer=nn.Identity,
+        act2_layer=nn.GELU,
+        # act1_layer=nn.GELU,
+        # act2_layer=nn.Identity,
+        bias=False,
+        kernel_size=7,
+        global_kernel_size=14,
+        padding=3,
+        **kwargs,
+    ):
+        super().__init__()
+        med_channels = int(expansion_ratio * dim)
+        self.pwconv1 = nn.Conv2d(dim, med_channels, 1, bias=bias)
+        self.act1 = act1_layer()
+        self.dwconv1 = OversizeConv2d(med_channels, global_kernel_size, bias)
+        self.dwconv2 = nn.Conv2d(
+            med_channels,
+            med_channels,
+            kernel_size=kernel_size,
+            padding=padding,
+            groups=med_channels,
+            bias=bias,
+        )  # depthwise conv
+        self.act2 = act2_layer()
+        self.pwconv2 = nn.Conv2d(med_channels // 2, dim, 1, bias=bias)
+
+    def forward(self, x):
+        x = x.permute(0, 3, 1, 2)
+        x = self.pwconv1(x)
+        # x = self.act1(x)
+        x = self.dwconv1(x) + self.dwconv2(x)
+        x1, x2 = x.chunk(2, 1)
+        x = self.act2(x1) * self.act2(x2)
+        x = self.pwconv2(x)
+        x = x.permute(0, 2, 3, 1)
+        return x
+
+
+class ParC_V3_cat(nn.Module):
+    def __init__(
+        self,
+        dim,
+        expansion_ratio=2,
+        act1_layer=nn.Identity,
+        act2_layer=nn.GELU,
+        # act1_layer=nn.GELU,
+        # act2_layer=nn.Identity,
+        bias=False,
+        kernel_size=7,
+        global_kernel_size=14,
+        padding=3,
+        **kwargs,
+    ):
+        super().__init__()
+        med_channels = int(expansion_ratio * dim)
+        self.pwconv1 = nn.Conv2d(dim, med_channels, 1, bias=bias)
+        self.act1 = act1_layer()
+        self.dwconv1 = OversizeConv2d(med_channels // 2, global_kernel_size, bias)
+        self.dwconv2 = nn.Conv2d(
+            med_channels // 2,
+            med_channels // 2,
+            kernel_size=kernel_size,
+            padding=padding,
+            groups=med_channels // 2,
+            bias=bias,
+        )  # depthwise conv
+        self.act2 = act2_layer()
+        self.pwconv2 = nn.Conv2d(med_channels // 2, dim, 1, bias=bias)
+
+    def forward(self, x):
+        x = x.permute(0, 3, 1, 2)
+        x = self.pwconv1(x)
+        # x = self.act1(x)
+        x1, x2 = x.chunk(2, 1)                                                                                         
+        x1_1, x1_2 = self.dwconv1(x1).chunk(2, 1)
+        x2_1, x2_2 = self.dwconv2(x2).chunk(2, 1)
+        x1 = self.act2(x1_1) * self.act2(x1_2)
+        x2 = self.act2(x2_1) * self.act2(x2_2)
+        x = torch.cat([x1, x2], 1)
+        x = self.pwconv2(x)
+        x = x.permute(0, 2, 3, 1)
+        return x
+
+
+class ParC_V3_serial(nn.Module):
+    def __init__(
+        self,
+        dim,
+        expansion_ratio=2,
+        act1_layer=nn.Identity,
+        act2_layer=nn.GELU,
+        # act1_layer=nn.GELU,
+        # act2_layer=nn.Identity,
+        bias=False,
+        kernel_size=7,
+        global_kernel_size=14,
+        padding=3,
+        **kwargs,
+    ):
+        super().__init__()
+        med_channels = int(expansion_ratio * dim)
+        self.pwconv1 = nn.Conv2d(dim, med_channels, 1, bias=bias)
+        self.act1 = act1_layer()
+        self.dwconv1 = OversizeConv2d(dim, global_kernel_size, bias)
+        self.dwconv2 = nn.Conv2d(
+            med_channels,
+            med_channels,
+            kernel_size=kernel_size,
+            padding=padding,
+            groups=med_channels,
+            bias=bias,
+        )  # depthwise conv
+        self.act2 = act2_layer()
+        self.pwconv2 = nn.Conv2d(med_channels // 2, dim, 1, bias=bias)
+
+    def forward(self, x):
+        x = x.permute(0, 3, 1, 2)
+        x = self.dwconv1(x)
+        x = self.pwconv1(x)
+        # x = self.act1(x)
+        x = self.dwconv2(x)
+        x1, x2 = x.chunk(2, 1)
+        x = self.act2(x1) * self.act2(x2)
+        x = self.pwconv2(x)
+        x = x.permute(0, 2, 3, 1)
+        return x
+
+
+class ParC_V4(nn.Module):
+    def __init__(
+        self,
+        dim,
+        expansion_ratio=3,
+        act1_layer=nn.Identity,
+        act2_layer=nn.GELU,
+        bias=False,
+        kernel_size=7,
+        padding=3,
+        **kwargs,
+    ):
+        super().__init__()
+        med_channels = int(expansion_ratio * dim)
+        self.pwconv1 = nn.Linear(dim, med_channels, bias=bias)
+        self.act1 = act1_layer()
+        # self.dwconv = OversizeConv2d(med_channels, kernel_size, bias)
+        self.dwconv = nn.Conv2d(
+            med_channels,
+            med_channels,
+            kernel_size=kernel_size,
+            padding=padding,
+            groups=med_channels,
+            bias=bias,
+        )  # depthwise conv
+        self.act2 = act2_layer()
+        self.pwconv2 = nn.Linear(med_channels // 2, dim, bias=bias)
+
+    def forward(self, x):
+        x = self.pwconv1(x)
+        x = self.act1(x)
+        x = x.permute(0, 3, 1, 2)
+        x = self.dwconv(x)
+        x = x.permute(0, 2, 3, 1)
+        x1, x2, x3 = x.chunk(3, -1)
+        x = x1 + x2 * self.act2(x3)
+        x = self.pwconv2(x)
         return x
 
 
@@ -462,7 +690,8 @@ class SepConv(nn.Module):
         self,
         dim,
         expansion_ratio=2,
-        act1_layer=StarReLU,
+        # expansion_ratio=1.5,
+        act1_layer=nn.GELU,
         act2_layer=nn.Identity,
         bias=False,
         kernel_size=7,
@@ -495,32 +724,6 @@ class SepConv(nn.Module):
         return x
 
 
-class Conv7x7(nn.Module):
-    def __init__(
-        self,
-        dim,
-        bias=False,
-        kernel_size=7,
-        padding=3,
-        **kwargs,
-    ):
-        super().__init__()
-        self.dwconv = nn.Conv2d(
-            dim,
-            dim,
-            kernel_size=kernel_size,
-            padding=padding,
-            groups=dim,
-            bias=bias,
-        )  # depthwise conv
-
-    def forward(self, x):
-        x = x.permute(0, 3, 1, 2)
-        x = self.dwconv(x)
-        x = x.permute(0, 2, 3, 1)
-        return x
-
-
 class Pooling(nn.Module):
     """
     Implementation of pooling for PoolFormer: https://arxiv.org/abs/2111.11418
@@ -550,7 +753,7 @@ class Mlp(nn.Module):
         dim,
         mlp_ratio=4,
         out_features=None,
-        act_layer=StarReLU,
+        act_layer=nn.GELU,
         drop=0.0,
         bias=False,
         **kwargs,
@@ -576,6 +779,40 @@ class Mlp(nn.Module):
         return x
 
 
+class BGU(nn.Module):
+    def __init__(
+        self,
+        dim,
+        mlp_ratio=5,
+        out_features=None,
+        act_layer=nn.GELU,
+        drop=0.0,
+        bias=False,
+        **kwargs,
+    ):
+        super().__init__()
+        in_features = dim
+        out_features = out_features or in_features
+        hidden_features = int(mlp_ratio * in_features)
+        drop_probs = to_2tuple(drop)
+
+        self.fc1 = nn.Linear(in_features, hidden_features, bias=bias)
+        self.act = act_layer()
+        self.drop1 = nn.Dropout(drop_probs[0])
+        self.fc2 = nn.Linear(hidden_features // 2, out_features, bias=bias)
+        self.drop2 = nn.Dropout(drop_probs[1])
+
+    def forward(self, x):
+        x = self.fc1(x)
+        x = self.act(x)
+        x = self.drop1(x)
+        x1, x2 = x.chunk(2, -1)
+        x = x1 * x2
+        x = self.fc2(x)
+        x = self.drop2(x)
+        return x
+
+
 class MlpHead(nn.Module):
     """MLP classification head"""
 
@@ -584,7 +821,7 @@ class MlpHead(nn.Module):
         dim,
         num_classes=1000,
         mlp_ratio=4,
-        act_layer=SquaredReLU,
+        act_layer=nn.GELU,
         norm_layer=nn.LayerNorm,
         head_dropout=0.0,
         bias=True,
@@ -615,8 +852,8 @@ class MetaFormerBlock(nn.Module):
         self,
         dim,
         token_mixer=nn.Identity,
+        global_kernel_size=14,
         mlp=Mlp,
-        mlp_ratio=4,
         norm_layer=nn.LayerNorm,
         drop=0.0,
         drop_path=0.0,
@@ -627,7 +864,9 @@ class MetaFormerBlock(nn.Module):
         super().__init__()
 
         self.norm1 = norm_layer(dim)
-        self.token_mixer = token_mixer(dim=dim, drop=drop)
+        self.token_mixer = token_mixer(
+            dim=dim, drop=drop, global_kernel_size=global_kernel_size
+        )
         self.drop_path1 = DropPath(drop_path) if drop_path > 0.0 else nn.Identity()
         self.layer_scale1 = (
             Scale(dim=dim, init_value=layer_scale_init_value)
@@ -641,7 +880,7 @@ class MetaFormerBlock(nn.Module):
         )
 
         self.norm2 = norm_layer(dim)
-        self.mlp = mlp(dim=dim, drop=drop, mlp_ratio=mlp_ratio)
+        self.mlp = mlp(dim=dim, drop=drop)
         self.drop_path2 = DropPath(drop_path) if drop_path > 0.0 else nn.Identity()
         self.layer_scale2 = (
             Scale(dim=dim, init_value=layer_scale_init_value)
@@ -670,84 +909,28 @@ downsamplings for the last 3 stages is a layer of conv with k3, s2 and p1
 DOWNSAMPLE_LAYERS_FOUR_STAGES format: [Downsampling, Downsampling, Downsampling, Downsampling]
 use `partial` to specify some arguments
 """
-# MetaFormer
-DOWNSAMPLE_LAYERS_FOUR_STAGES = [
-    partial(
-        Downsampling,
-        kernel_size=7,
-        stride=4,
-        padding=2,
-        post_norm=partial(LayerNormGeneral, bias=False, eps=1e-6),
-    )
-] + [
-    partial(
-        Downsampling,
-        kernel_size=3,
-        stride=2,
-        padding=1,
-        pre_norm=partial(LayerNormGeneral, bias=False, eps=1e-6),
-        pre_permute=True,
-    )
-] * 3
-# MetaFormer_g248
-DOWNSAMPLE_LAYERS_FOUR_STAGES_GROUP = [
-    partial(
-        Downsampling,
-        kernel_size=7,
-        stride=4,
-        padding=2,
-        post_norm=partial(LayerNormGeneral, bias=False, eps=1e-6),
-    )
-] + [
-    partial(
-        Downsampling,
-        kernel_size=6,
-        stride=2,
-        padding=2,
-        groups=2,
-        pre_norm=partial(LayerNormGeneral, bias=False, eps=1e-6),
-        pre_permute=True,
-    )
-] + [
-    partial(
-        Downsampling,
-        kernel_size=6,
-        stride=2,
-        padding=2,
-        groups=4,
-        pre_norm=partial(LayerNormGeneral, bias=False, eps=1e-6),
-        pre_permute=True,
-    )
-] + [
-    partial(
-        Downsampling,
-        kernel_size=6,
-        stride=2,
-        padding=2,
-        groups=8,
-        pre_norm=partial(LayerNormGeneral, bias=False, eps=1e-6),
-        pre_permute=True,
-    )
-]
-# TinyViT downsample
-PATCHMERGING_FOUR_STAGES = [
-    partial(
-        Downsampling,
-        kernel_size=7,
-        stride=4,
-        padding=2,
-        post_norm=partial(LayerNormGeneral, bias=False, eps=1e-6),
-    )
-] + [
-    partial(
-        PatchMerging,
-        kernel_size=6,
-        stride=2,
-        padding=2,
-        pre_norm=partial(LayerNormGeneral, bias=False, eps=1e-6),
-        pre_permute=True,
-    )
-] * 3
+DOWNSAMPLE_LAYERS_FOUR_STAGES = (
+    [
+        partial(
+            Downsampling,
+            kernel_size=7,
+            stride=4,
+            padding=2,
+            post_norm=partial(LayerNormGeneral, bias=False, eps=1e-6),
+        )
+    ]
+    + [
+        partial(
+            Downsampling,
+            kernel_size=3,
+            stride=2,
+            padding=1,
+            pre_norm=partial(LayerNormGeneral, bias=False, eps=1e-6),
+            pre_permute=True,
+        )
+    ]
+    * 3
+)
 
 
 class MetaFormer(nn.Module):
@@ -782,8 +965,8 @@ class MetaFormer(nn.Module):
         dims=[64, 128, 320, 512],
         downsample_layers=DOWNSAMPLE_LAYERS_FOUR_STAGES,
         token_mixers=nn.Identity,
+        global_kernel_sizes=[111, 55, 27, 13],
         mlps=Mlp,
-        mlp_ratio=4,
         norm_layers=partial(LayerNormGeneral, eps=1e-6, bias=False),
         drop_path_rate=0.0,
         head_dropout=0.0,
@@ -840,8 +1023,8 @@ class MetaFormer(nn.Module):
                     MetaFormerBlock(
                         dim=dims[i],
                         token_mixer=token_mixers[i],
+                        global_kernel_size=global_kernel_sizes[i],
                         mlp=mlps[i],
-                        mlp_ratio=mlp_ratio,
                         norm_layer=norm_layers[i],
                         drop_path=dp_rates[cur + j],
                         layer_scale_init_value=layer_scale_init_values[i],
@@ -856,11 +1039,9 @@ class MetaFormer(nn.Module):
         self.norm = output_norm(dims[-1])
 
         if head_dropout > 0.0:
-            self.head = head_fn(
-                dims[-1], num_classes, head_dropout=head_dropout, mlp_ratio=mlp_ratio
-            )
+            self.head = head_fn(dims[-1], num_classes, head_dropout=head_dropout)
         else:
-            self.head = head_fn(dims[-1], num_classes, mlp_ratio=mlp_ratio)
+            self.head = head_fn(dims[-1], num_classes)
 
         self.apply(self._init_weights)
 
@@ -886,34 +1067,12 @@ class MetaFormer(nn.Module):
         return x
 
 
-# @register_model
-# def convformer_s12(pretrained=False, **kwargs):
-#     model = MetaFormer(
-#         depths=[2, 2, 6, 2],
-#         dims=[64, 128, 320, 512],
-#         token_mixers=SepConv,
-#         head_fn=MlpHead,
-#         **kwargs,
-#     )
-#     model.default_cfg = default_cfgs["convformer_s18"]
-#     if pretrained:
-#         state_dict = torch.hub.load_state_dict_from_url(
-#             url=model.default_cfg["url"], map_location="cpu", check_hash=True
-#         )
-#         model.load_state_dict(state_dict)
-#     return model
-
-
-# 相比convformer结构，同等大小的convnext速度快非常多。
-# 性能上，ConvNeXt在100epoch以内性能很好，但是之后convformer会超越convnext
 @register_model
-def convnext_xt_dssep(pretrained=False, **kwargs):
+def convformer_s12(pretrained=False, **kwargs):
     model = MetaFormer(
         depths=[2, 2, 6, 2],
-        dims=[80, 160, 400, 640],
-        # dims=[96, 192, 480, 768],
-        downsample_layers=PATCHMERGING_FOUR_STAGES,
-        token_mixers=[Conv7x7, Conv7x7, Conv7x7, Conv7x7],
+        dims=[64, 128, 320, 512],
+        token_mixers=SepConv,
         head_fn=MlpHead,
         **kwargs,
     )
@@ -927,13 +1086,29 @@ def convnext_xt_dssep(pretrained=False, **kwargs):
 
 
 @register_model
-def convnext_xt_ds6x6g248(pretrained=False, **kwargs):
+def caformer_s12(pretrained=False, **kwargs):
     model = MetaFormer(
         depths=[2, 2, 6, 2],
-        dims=[80, 160, 400, 640],
-        # dims=[96, 192, 480, 768],
-        downsample_layers=DOWNSAMPLE_LAYERS_FOUR_STAGES_GROUP,
-        token_mixers=[Conv7x7, Conv7x7, Conv7x7, Conv7x7],
+        dims=[64, 128, 320, 512],
+        token_mixers=[SepConv, SepConv, Attention, Attention],
+        head_fn=MlpHead,
+        **kwargs,
+    )
+    model.default_cfg = default_cfgs["caformer_s18"]
+    if pretrained:
+        state_dict = torch.hub.load_state_dict_from_url(
+            url=model.default_cfg["url"], map_location="cpu", check_hash=True
+        )
+        model.load_state_dict(state_dict)
+    return model
+
+
+@register_model
+def parcnet_v3_s12(pretrained=False, **kwargs):
+    model = MetaFormer(
+        depths=[2, 2, 6, 2],
+        dims=[64, 128, 320, 512],
+        token_mixers=ParC_V3,
         head_fn=MlpHead,
         **kwargs,
     )
@@ -946,24 +1121,16 @@ def convnext_xt_ds6x6g248(pretrained=False, **kwargs):
     return model
 
 
-'''
-# 如果不对降采样模块加以修改，二倍等宽网络的参数量和计算量会有显著增长
-# 在修改降采样模块之后（增加了groups=4，以使得降采样模块的参数量和计算量完全不变），二倍等宽网络的参数量和计算量几乎保持不变，但性能有质的提升。
-# 推理速度上，二倍等宽网络比标准convnext慢，但是比convformer快不少。
 @register_model
-def convnext_xt_nobottleneck(pretrained=False, **kwargs):
+def parcnet_v3_s12_384(pretrained=False, **kwargs):
     model = MetaFormer(
         depths=[2, 2, 6, 2],
-        # dims=[128, 256, 640, 1024],
-        # dims=[144, 288, 720, 1152],
-        dims=[160, 320, 800, 1280],
-        downsample_layers=DOWNSAMPLE_LAYERS_FOUR_STAGES_GROUP,
-        token_mixers=[Conv7x7, Conv7x7, Conv7x7, Conv7x7],
+        dims=[64, 128, 320, 512],
+        token_mixers=ParC_V3_add,
         head_fn=MlpHead,
-        mlp_ratio=1,
         **kwargs,
     )
-    model.default_cfg = default_cfgs["convformer_s18"]
+    model.default_cfg = default_cfgs["convformer_s18_384"]
     if pretrained:
         state_dict = torch.hub.load_state_dict_from_url(
             url=model.default_cfg["url"], map_location="cpu", check_hash=True
@@ -973,11 +1140,11 @@ def convnext_xt_nobottleneck(pretrained=False, **kwargs):
 
 
 @register_model
-def convnext_tiny(pretrained=False, **kwargs):
+def parcnet_v3_s18(pretrained=False, **kwargs):
     model = MetaFormer(
         depths=[3, 3, 9, 3],
-        dims=[96, 192, 384, 768],
-        token_mixers=[Conv7x7, Conv7x7, Conv7x7, Conv7x7],
+        dims=[64, 128, 320, 512],
+        token_mixers=ParC_V3_add,
         head_fn=MlpHead,
         **kwargs,
     )
@@ -991,14 +1158,14 @@ def convnext_tiny(pretrained=False, **kwargs):
 
 
 @register_model
-def convnext_tiny_nobottleneck(pretrained=False, **kwargs):
+def parcnet_v2_cvpr(pretrained=False, **kwargs):
     model = MetaFormer(
-        depths=[3, 3, 9, 3],
-        dims=[160, 320, 800, 1280],
-        downsample_layers=DOWNSAMPLE_LAYERS_FOUR_STAGES_GROUP,
-        token_mixers=[Conv7x7, Conv7x7, Conv7x7, Conv7x7],
-        head_fn=MlpHead,
-        mlp_ratio=1,
+        depths=[3, 3, 12, 3],
+        dims=[64, 128, 320, 512],
+        # token_mixers=ParC_V3,
+        token_mixers=ParC_V3_add,
+        # token_mixers=[ParC_V3, ParC_V3_add, ParC_V3_add, ParC_V3_add],
+        mlps=BGU,
         **kwargs,
     )
     model.default_cfg = default_cfgs["convformer_s18"]
@@ -1008,4 +1175,4 @@ def convnext_tiny_nobottleneck(pretrained=False, **kwargs):
         )
         model.load_state_dict(state_dict)
     return model
-    '''
+

@@ -654,7 +654,8 @@ class SepConv(nn.Module):
     def __init__(
         self,
         dim,
-        expansion_ratio=1.5,
+        expansion_ratio=2,
+        # expansion_ratio=1.5,
         act1_layer=nn.GELU,
         act2_layer=nn.Identity,
         bias=False,
@@ -743,7 +744,7 @@ class Mlp(nn.Module):
         return x
 
 
-class BGU(nn.Module):
+class BGU2(nn.Module):
     def __init__(
         self,
         dim,
@@ -768,10 +769,42 @@ class BGU(nn.Module):
 
     def forward(self, x):
         x = self.fc1(x)
-        x = self.act(x)
         x = self.drop1(x)
         x1, x2 = x.chunk(2, -1)
-        x = x1 * x2
+        x = x1 * self.act(x2)
+        x = self.fc2(x)
+        x = self.drop2(x)
+        return x
+
+
+class BGU4(nn.Module):
+    def __init__(
+        self,
+        dim,
+        mlp_ratio=4,
+        out_features=None,
+        act_layer=nn.GELU,
+        drop=0.0,
+        bias=False,
+        **kwargs,
+    ):
+        super().__init__()
+        in_features = dim
+        out_features = out_features or in_features
+        hidden_features = int(mlp_ratio * in_features)
+        drop_probs = to_2tuple(drop)
+
+        self.fc1 = nn.Linear(in_features, hidden_features, bias=bias)
+        self.act = act_layer()
+        self.drop1 = nn.Dropout(drop_probs[0])
+        self.fc2 = nn.Linear(hidden_features // 2, out_features, bias=bias)
+        self.drop2 = nn.Dropout(drop_probs[1])
+
+    def forward(self, x):
+        x = self.fc1(x)
+        x = self.drop1(x)
+        x1, x2 = x.chunk(2, -1)
+        x = x1 * self.act(x2)
         x = self.fc2(x)
         x = self.drop2(x)
         return x
@@ -1057,15 +1090,79 @@ class MetaFormer(nn.Module):
 
 
 @register_model
+def parcnet_v3_bgu_s12(pretrained=False, **kwargs):
+    model = MetaFormer(
+        depths=[2, 2, 6, 2],
+        dims=[96, 192, 448, 672],
+        # dims=[64, 128, 320, 512],
+        downsample_layers=DOWNSAMPLE_LAYERS_FOUR_STAGES_GROUP,
+        token_mixers=ParC_V3,
+        mlps=BGU2,
+        head_fn=MlpHead,    
+        **kwargs,
+    )
+    model.default_cfg = default_cfgs["convformer_s18"]
+    if pretrained:
+        state_dict = torch.hub.load_state_dict_from_url(
+            url=model.default_cfg["url"], map_location="cpu", check_hash=True
+        )
+        model.load_state_dict(state_dict)
+    return model
+
+
+@register_model
+def parcnet_v3_bgu4_s12(pretrained=False, **kwargs):
+    model = MetaFormer(
+        depths=[2, 2, 6, 2],
+        dims=[64, 128, 384, 672],
+        # dims=[64, 144, 384, 640],
+        downsample_layers=DOWNSAMPLE_LAYERS_FOUR_STAGES_GROUP,
+        token_mixers=ParC_V3,
+        mlps=BGU4,
+        head_fn=MlpHead,    
+        **kwargs,
+    )
+    model.default_cfg = default_cfgs["convformer_s18"]
+    if pretrained:
+        state_dict = torch.hub.load_state_dict_from_url(
+            url=model.default_cfg["url"], map_location="cpu", check_hash=True
+        )
+        model.load_state_dict(state_dict)
+    return model
+
+
+@register_model
 def parcnet_v3_bgu_s18(pretrained=False, **kwargs):
     model = MetaFormer(
-        depths=[3, 3, 9, 3],
-        dims=[96, 192, 432, 672],
-        # dims=[80, 160, 480, 640],
+        # depths=[3, 3, 9, 3],
+        # dims=[96, 192, 448, 672],
+        depths=[3, 3, 12, 3],
+        dims=[80, 160, 432, 640],
         downsample_layers=DOWNSAMPLE_LAYERS_FOUR_STAGES_GROUP,
         token_mixers=ParC_V3,
         # token_mixers=[ParC_V3, ParC_V3_add, ParC_V3_add, ParC_V3_add],
-        mlps=BGU,
+        mlps=BGU2,
+        head_fn=MlpHead,
+        **kwargs,
+    )
+    model.default_cfg = default_cfgs["convformer_s18"]
+    if pretrained:
+        state_dict = torch.hub.load_state_dict_from_url(
+            url=model.default_cfg["url"], map_location="cpu", check_hash=True
+        )
+        model.load_state_dict(state_dict)
+    return model
+
+
+@register_model
+def parcnet_v3_bgu4_s18(pretrained=False, **kwargs):
+    model = MetaFormer(
+        depths=[3, 3, 9, 3],
+        dims=[64, 128, 384, 672],
+        downsample_layers=DOWNSAMPLE_LAYERS_FOUR_STAGES_GROUP,
+        token_mixers=ParC_V3,
+        # token_mixers=[ParC_V3, ParC_V3_add, ParC_V3_add, ParC_V3_add],
+        mlps=BGU4,
         head_fn=MlpHead,
         **kwargs,
     )

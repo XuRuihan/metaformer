@@ -7,7 +7,7 @@ sys.path.extend([".", ".."])
 
 from models import convnext_xt, convnext_xt_nobottleneck, convnext_tiny
 from models.parcnet_v3 import parcnet_v3_s18, parcnet_v2_cvpr
-from models.parcnet_v3_downsample import parcnet_v3_bgu_s18
+from models.parcnet_v3_bgu import parcnet_v3_bgu_s18
 from models.conv2former import conv2former_tiny
 from models.swin import swin_tiny
 from models.hornet import hornet_tiny_7x7

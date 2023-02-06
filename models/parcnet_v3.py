@@ -667,7 +667,8 @@ class SepConv(nn.Module):
     def __init__(
         self,
         dim,
-        expansion_ratio=1.5,
+        expansion_ratio=2,
+        # expansion_ratio=1.5,
         act1_layer=nn.GELU,
         act2_layer=nn.Identity,
         bias=False,
@@ -1085,7 +1086,7 @@ def parcnet_v3_s12(pretrained=False, **kwargs):
     model = MetaFormer(
         depths=[2, 2, 6, 2],
         dims=[64, 128, 320, 512],
-        token_mixers=ParC_V3_add,
+        token_mixers=ParC_V3,
         head_fn=MlpHead,
         **kwargs,
     )
