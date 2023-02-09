@@ -178,37 +178,6 @@ class Scale(nn.Module):
         return x * self.scale
 
 
-class StarReLU(nn.Module):
-    """
-    StarReLU: s * relu(x + b1) ** 2 + b2
-    """
-
-    def __init__(
-        self,
-        scale_value=1.0,
-        bias_value=0.0,
-        scale_learnable=True,
-        bias_learnable=True,
-        mode=None,
-        inplace=False,
-    ):
-        super().__init__()
-        self.inplace = inplace
-        self.relu = nn.ReLU(inplace=inplace)
-        self.scale = nn.Parameter(
-            scale_value * torch.ones(1), requires_grad=scale_learnable
-        )
-        self.pre_bias = nn.Parameter(
-            bias_value * torch.ones(1), requires_grad=bias_learnable
-        )
-        self.post_bias = nn.Parameter(
-            bias_value * torch.ones(1), requires_grad=bias_learnable
-        )
-
-    def forward(self, x):
-        return self.scale * (self.relu(x) + self.pre_bias) ** 2 + self.post_bias
-
-
 class StarGELU(nn.Module):
     def __init__(
         self,
@@ -226,64 +195,11 @@ class StarGELU(nn.Module):
             scale_value * torch.ones(1), requires_grad=scale_learnable
         )
         self.bias = nn.Parameter(
-            bias_value * torch.zeros(1), requires_grad=bias_learnable
+            bias_value * torch.ones(1), requires_grad=bias_learnable
         )
 
     def forward(self, x):
         return self.scale * self.gelu(x) + self.bias
-
-
-class Attention(nn.Module):
-    """
-    Vanilla self-attention from Transformer: https://arxiv.org/abs/1706.03762.
-    Modified from timm.
-    """
-
-    def __init__(
-        self,
-        dim,
-        head_dim=32,
-        num_heads=None,
-        qkv_bias=False,
-        attn_drop=0.0,
-        proj_drop=0.0,
-        proj_bias=False,
-        **kwargs,
-    ):
-        super().__init__()
-
-        self.head_dim = head_dim
-        self.scale = head_dim ** -0.5
-
-        self.num_heads = num_heads if num_heads else dim // head_dim
-        if self.num_heads == 0:
-            self.num_heads = 1
-
-        self.attention_dim = self.num_heads * self.head_dim
-
-        self.qkv = nn.Linear(dim, self.attention_dim * 3, bias=qkv_bias)
-        self.attn_drop = nn.Dropout(attn_drop)
-        self.proj = nn.Linear(self.attention_dim, dim, bias=proj_bias)
-        self.proj_drop = nn.Dropout(proj_drop)
-
-    def forward(self, x):
-        B, H, W, C = x.shape
-        N = H * W
-        qkv = (
-            self.qkv(x)
-            .reshape(B, N, 3, self.num_heads, self.head_dim)
-            .permute(2, 0, 3, 1, 4)
-        )
-        q, k, v = qkv.unbind(0)  # make torchscript happy (cannot use tensor as tuple)
-
-        attn = (q @ k.transpose(-2, -1)) * self.scale
-        attn = attn.softmax(dim=-1)
-        attn = self.attn_drop(attn)
-
-        x = (attn @ v).transpose(1, 2).reshape(B, H, W, self.attention_dim)
-        x = self.proj(x)
-        x = self.proj_drop(x)
-        return x
 
 
 class OversizeConv2d(nn.Module):
@@ -296,7 +212,7 @@ class OversizeConv2d(nn.Module):
             assert kernel_size % 2 == 1
             padding = kernel_size // 2
         else:
-            print(interpolate)
+            print("interpolate:", interpolate)
             assert interpolate % 2 == 1
             padding = interpolate // 2
             interpolate = to_2tuple(interpolate)
@@ -410,7 +326,7 @@ class ParC_V3_add(nn.Module):
         self,
         dim,
         expansion_ratio=2,
-        act_layer=StarReLU,
+        act_layer=StarGELU,
         bias=False,
         kernel_size=7,
         global_kernel_size=14,
@@ -857,9 +773,9 @@ def parcnet_v2_s12(pretrained=False, **kwargs):
         dims=[64, 128, 384, 672],
         # dims=[64, 144, 384, 640],
         downsample_layers=DOWNSAMPLE_LAYERS_FOUR_STAGES_GROUP,
-        token_mixers=ParC_V3,#_add,
+        token_mixers=ParC_V3,  # _add,
         mlps=BGU,
-        head_fn=MlpHead,    
+        head_fn=MlpHead,
         **kwargs,
     )
     model.default_cfg = default_cfgs["convformer_s18"]
@@ -878,9 +794,9 @@ def parcnet_v2_e2_s12(pretrained=False, **kwargs):
         dims=[96, 192, 448, 672],
         # dims=[64, 128, 320, 512],
         downsample_layers=DOWNSAMPLE_LAYERS_FOUR_STAGES_GROUP,
-        token_mixers=ParC_V3,#_add,
-        mlps=partial(BGU, expansion_ratio=2),
-        head_fn=MlpHead,    
+        token_mixers=ParC_V3,  # _add,
+        mlps=partial(BGU, mlp_ratio=2),
+        head_fn=MlpHead,
         **kwargs,
     )
     model.default_cfg = default_cfgs["convformer_s18"]
@@ -898,7 +814,7 @@ def parcnet_v2_s18(pretrained=False, **kwargs):
         depths=[3, 3, 9, 3],
         dims=[64, 128, 384, 672],
         downsample_layers=DOWNSAMPLE_LAYERS_FOUR_STAGES_GROUP,
-        token_mixers=ParC_V3,#_add,
+        token_mixers=ParC_V3,  # _add,
         mlps=BGU,
         head_fn=MlpHead,
         **kwargs,
@@ -920,9 +836,28 @@ def parcnet_v2_e2_s18(pretrained=False, **kwargs):
         # depths=[3, 3, 12, 3],
         # dims=[80, 160, 432, 640],
         downsample_layers=DOWNSAMPLE_LAYERS_FOUR_STAGES_GROUP,
-        token_mixers=ParC_V3,#_add,
-        mlps=partial(BGU, expansion_ratio=2),
+        token_mixers=ParC_V3,  # _add,
+        mlps=partial(BGU, mlp_ratio=2),
         head_fn=MlpHead,
+        **kwargs,
+    )
+    model.default_cfg = default_cfgs["convformer_s18"]
+    if pretrained:
+        state_dict = torch.hub.load_state_dict_from_url(
+            url=model.default_cfg["url"], map_location="cpu", check_hash=True
+        )
+        model.load_state_dict(state_dict)
+    return model
+
+
+@register_model
+def parcnet_v2_cvpr_ideal(pretrained=False, **kwargs):
+    model = MetaFormer(
+        depths=[3, 3, 12, 3],
+        dims=[64, 128, 320, 512],
+        # token_mixers=ParC_V3,
+        token_mixers=ParC_V3_add,
+        mlps=partial(BGU, mlp_ratio=5),
         **kwargs,
     )
     model.default_cfg = default_cfgs["convformer_s18"]

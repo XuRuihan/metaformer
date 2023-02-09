@@ -12,6 +12,7 @@ sys.path.extend([".", ".."])
 from models import convformer_s18, convformer_s12
 from models.parcnet_v3 import parcnet_v3_s12, parcnet_v3_s18, parcnet_v2_cvpr
 from models.parcnet_v3_bgu import parcnet_v3_bgu_s12, parcnet_v3_bgu4_s12, parcnet_v3_bgu_s18, parcnet_v3_bgu4_s18
+from models.parcnet_v2_ideal import parcnet_v2_cvpr_ideal
 from models.conv2former import conv2former_tiny
 from models.swin import swin_tiny
 
@@ -29,10 +30,11 @@ models = {
     # "parcnet_v3_s12": parcnet_v3_s12(),
     # "parcnet_v3_bgu_s18": parcnet_v3_bgu_s18(),
     # "parcnet_v3_bgu4_s18": parcnet_v3_bgu4_s18(),
-    "parcnet_v3_bgu_s12": parcnet_v3_bgu_s12(),
-    "parcnet_v3_bgu4_s12": parcnet_v3_bgu4_s12(),
+    # "parcnet_v3_bgu_s12": parcnet_v3_bgu_s12(),
+    # "parcnet_v3_bgu4_s12": parcnet_v3_bgu4_s12(),
     # "conv2former_tiny": conv2former_tiny(),
-    # "parcnet_v2_cvpr": parcnet_v2_cvpr(),
+    "parcnet_v2_cvpr": parcnet_v2_cvpr(),
+    "parcnet_v2_cvpr_ideal": parcnet_v2_cvpr_ideal(),
     # "swin_tiny": swin_tiny(),
 }
 

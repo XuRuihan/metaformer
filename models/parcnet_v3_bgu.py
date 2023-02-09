@@ -223,7 +223,7 @@ class StarGELU(nn.Module):
             scale_value * torch.ones(1), requires_grad=scale_learnable
         )
         self.bias = nn.Parameter(
-            bias_value * torch.zeros(1), requires_grad=bias_learnable
+            bias_value * torch.ones(1), requires_grad=bias_learnable
         )
 
     def forward(self, x):
@@ -293,7 +293,7 @@ class OversizeConv2d(nn.Module):
             assert kernel_size % 2 == 1
             padding = kernel_size // 2
         else:
-            print(interpolate)
+            print("interpolate:", interpolate)
             assert interpolate % 2 == 1
             padding = interpolate // 2
             interpolate = to_2tuple(interpolate)
@@ -408,7 +408,7 @@ class ParC_V3_add(nn.Module):
         self,
         dim,
         expansion_ratio=2,
-        act_layer=StarReLU,
+        act_layer=StarGELU,
         bias=False,
         kernel_size=7,
         global_kernel_size=14,
@@ -1001,9 +1001,9 @@ def parcnet_v3_bgu4_s12(pretrained=False, **kwargs):
         dims=[64, 128, 384, 672],
         # dims=[64, 144, 384, 640],
         downsample_layers=DOWNSAMPLE_LAYERS_FOUR_STAGES_GROUP,
-        token_mixers=ParC_V3,
+        token_mixers=ParC_V3,  # _add,
         mlps=BGU,
-        head_fn=MlpHead,    
+        head_fn=MlpHead,
         **kwargs,
     )
     model.default_cfg = default_cfgs["convformer_s18"]
@@ -1022,9 +1022,9 @@ def parcnet_v3_bgu_s12(pretrained=False, **kwargs):
         dims=[96, 192, 448, 672],
         # dims=[64, 128, 320, 512],
         downsample_layers=DOWNSAMPLE_LAYERS_FOUR_STAGES_GROUP,
-        token_mixers=ParC_V3,
-        mlps=partial(BGU, expansion_ratio=2),
-        head_fn=MlpHead,    
+        token_mixers=ParC_V3,  # _add,
+        mlps=partial(BGU, mlp_ratio=2),
+        head_fn=MlpHead,
         **kwargs,
     )
     model.default_cfg = default_cfgs["convformer_s18"]
@@ -1042,7 +1042,7 @@ def parcnet_v3_bgu4_s18(pretrained=False, **kwargs):
         depths=[3, 3, 9, 3],
         dims=[64, 128, 384, 672],
         downsample_layers=DOWNSAMPLE_LAYERS_FOUR_STAGES_GROUP,
-        token_mixers=ParC_V3,
+        token_mixers=ParC_V3,  # _add,
         mlps=BGU,
         head_fn=MlpHead,
         **kwargs,
@@ -1064,8 +1064,8 @@ def parcnet_v3_bgu_s18(pretrained=False, **kwargs):
         # depths=[3, 3, 12, 3],
         # dims=[80, 160, 432, 640],
         downsample_layers=DOWNSAMPLE_LAYERS_FOUR_STAGES_GROUP,
-        token_mixers=ParC_V3,
-        mlps=partial(BGU, expansion_ratio=2),
+        token_mixers=ParC_V3,  # _add,
+        mlps=partial(BGU, mlp_ratio=2),
         head_fn=MlpHead,
         **kwargs,
     )
