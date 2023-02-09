@@ -8,16 +8,20 @@ import sys
 
 sys.path.extend([".", ".."])
 
-from models.parcnet_v3_bgu import parcnet_v3_bgu_s18
 from models.parcnet_v3 import parcnet_v2_cvpr
+from models.parcnet_v3_bgu import parcnet_v3_bgu_s18
+from models.parcnet_v2_ideal import parcnet_v2_s12, parcnet_v2_e2_s12, parcnet_v2_s18, parcnet_v2_e2_s18
+from models.conv2former import conv2former_tiny
 from models.swin import swin_tiny
 from models.convnext import convnext_tiny
 from models.hornet import hornet_tiny_7x7
 
 
 if __name__ == '__main__':
-    model = parcnet_v2_cvpr(pretrained=False)
-    log_file = "log/parcnet_v2_cvpr_profile.json"
+    # model = parcnet_v2_cvpr(pretrained=False)
+    # log_file = "log/parcnet_v2_cvpr_profile.json"
+    model = parcnet_v2_e2_s18(pretrained=False)
+    log_file = "log/parcnet_v2_e2_s18_profile.json"
     # model = hornet_tiny_7x7(pretrained=False)
     # log_file = "log/hornet_tiny_7x7_profile.json"
     # model = swin_tiny()
@@ -28,7 +32,7 @@ if __name__ == '__main__':
     device = torch.device('cuda')
     model.eval()
     model.to(device)
-    dump_input = torch.ones(1,3,224,224).to(device)
+    dump_input = torch.ones(16,3,224,224).to(device)
 
     # Warm-up
     for _ in range(5):
