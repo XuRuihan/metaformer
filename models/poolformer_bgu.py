@@ -132,24 +132,23 @@ class StarReLU(nn.Module):
 
     def __init__(
         self,
-        scale_value=1.0,
-        bias_value=0.0,
+        weight_init=1.0,
+        bias_init=0.0,
         scale_learnable=True,
         bias_learnable=True,
-        mode=None,
         inplace=False,
     ):
         super().__init__()
         self.inplace = inplace
         self.relu = nn.ReLU(inplace=inplace)
         self.scale = nn.Parameter(
-            scale_value * torch.ones(1), requires_grad=scale_learnable
+            weight_init * torch.ones(1), requires_grad=scale_learnable
         )
         # self.pre_bias = nn.Parameter(
-        #     bias_value * torch.ones(1), requires_grad=bias_learnable
+        #     bias_init * torch.ones(1), requires_grad=bias_learnable
         # )
         self.post_bias = nn.Parameter(
-            bias_value * torch.ones(1), requires_grad=bias_learnable
+            bias_init * torch.ones(1), requires_grad=bias_learnable
         )
 
     def forward(self, x):
@@ -157,28 +156,89 @@ class StarReLU(nn.Module):
         return self.scale * (self.relu(x)) ** 2 + self.post_bias
 
 
-class StarGELU(nn.Module):
+class PGELU(nn.Module):
+    r"""Applies the element-wise function:
+
+    .. math::
+        \text{PGELU}(x) = (1 - 2 * a) * \text{GELU}(x) + a * x + b
+
+    or
+
+    .. math::
+        \text{PGELU}(x) = (1 - a) * \text{GELU}(x) - a * \text{GELU}(-x)
+
+    especially,
+
+    .. math::
+        \text{PGELU}(x) =
+        \begin{cases}
+        \text{GELU}(x),   & \text{ if } a = 0 \\
+        0.5x              & \text{ if } a = 0.5 \\
+        -\text{GELU}(-x), & \text{ if } a = 1
+        \end{cases}
+
+    Here :math:`a` and :math:`b` are learnable parameters. When called without arguments, `nn.PGELU()` uses a single
+    parameter :math:`a` and :math:`b` across all input channels. If called with `nn.PGELU(nChannels)`,
+    separate :math:`a` and :math:`b` are used for each input channel.
+
+
+    .. note::
+        weight decay should not be used when learning :math:`a` for good performance.
+
+    .. note::
+        Channel dim is the last dim of input.
+
+    Args:
+        num_parameters (int): number of :math:`a` to learn.
+            Although it takes an int as input, there is only two values are legitimate:
+            1, or the number of channels at input. Default: 1
+        weight_init (float): the initial value of :math:`a`. Default: 0.5
+        bias_init (float): the initial value of :math:`b`. Default: 0.0
+
+    Shape:
+        - Input: :math:`( *)` where `*` means, any number of additional
+          dimensions.
+        - Output: :math:`(*)`, same shape as the input.
+
+    Attributes:
+        weight (Tensor): the learnable weights of shape (:attr:`num_parameters`).
+
+    Examples::
+
+        >>> m = nn.PGELU()
+        >>> input = torch.randn(2)
+        >>> output = m(input)
+    """
+    __constants__ = ["num_parameters"]
+    num_parameters: int
+
     def __init__(
         self,
-        scale_value=0.5,
-        bias_value=0.0,
-        scale_learnable=True,
+        num_parameters: int = 1,
+        weight_init: float = 0.5,
+        bias_init: float = 0.0,
+        weight_learnable=True,
         bias_learnable=True,
-        mode=None,
-        inplace=False,
-    ):
-        super().__init__()
-        self.inplace = inplace
+        device=None,
+        dtype=None,
+    ) -> None:
+        factory_kwargs = {"device": device, "dtype": dtype}
+        self.num_parameters = num_parameters
+        super(PGELU, self).__init__()
         self.gelu = nn.GELU()
-        self.scale = nn.Parameter(
-            scale_value * torch.ones(1), requires_grad=scale_learnable
+        self.weight = nn.Parameter(
+            torch.empty(num_parameters, **factory_kwargs).fill_(weight_init), requires_grad=weight_learnable
         )
         self.bias = nn.Parameter(
-            bias_value * torch.ones(1), requires_grad=bias_learnable
+            torch.empty(num_parameters, **factory_kwargs).fill_(bias_init), requires_grad=bias_learnable
         )
 
-    def forward(self, x):
-        return self.gelu(x) - self.scale * x + self.bias
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        # return self.gelu(x) - self.weight * x + self.bias
+        return (1 - 2 * self.weight) * self.gelu(x) + self.weight * x + self.bias
+
+    def extra_repr(self) -> str:
+        return "num_parameters={}".format(self.num_parameters)
 
 
 class LayerNormGeneral(nn.Module):
@@ -298,7 +358,7 @@ class BGU(nn.Module):
         dim,
         mlp_ratio=4,
         out_features=None,
-        act_layer=StarGELU,
+        act_layer=PGELU,
         drop=0.0,
         bias=False,
         **kwargs,
@@ -310,7 +370,7 @@ class BGU(nn.Module):
         drop_probs = to_2tuple(drop)
 
         self.fc1 = nn.Linear(in_features, hidden_features, bias=True)
-        self.act = act_layer()
+        self.act = act_layer(hidden_features // 2)
         self.drop1 = nn.Dropout(drop_probs[0])
         self.fc2 = nn.Linear(hidden_features // 2, out_features, bias=bias)
         self.drop2 = nn.Dropout(drop_probs[1])
@@ -332,7 +392,7 @@ class BGUv2(nn.Module):
         dim,
         mlp_ratio=4,
         out_features=None,
-        act_layer=StarGELU,
+        act_layer=PGELU,
         drop=0.0,
         bias=False,
         **kwargs,
@@ -344,7 +404,7 @@ class BGUv2(nn.Module):
         drop_probs = to_2tuple(drop)
 
         self.fc1 = nn.Linear(in_features, hidden_features + out_features, bias=True)
-        self.act = act_layer()
+        self.act = act_layer(hidden_features // 2)
         self.drop1 = nn.Dropout(drop_probs[0])
         self.fc2 = nn.Linear(hidden_features // 2, out_features, bias=bias)
         self.drop2 = nn.Dropout(drop_probs[1])
@@ -371,7 +431,7 @@ class BGUv3(nn.Module):
         dim,
         mlp_ratio=4,
         out_features=None,
-        act_layer=StarGELU,
+        act_layer=PGELU,
         drop=0.0,
         bias=False,
         **kwargs,
@@ -383,14 +443,14 @@ class BGUv3(nn.Module):
         drop_probs = to_2tuple(drop)
 
         self.fc1 = nn.Linear(in_features, hidden_features, bias=True)
-        self.act = act_layer()
+        self.act = act_layer(hidden_features // 2)
         self.drop1 = nn.Dropout(drop_probs[0])
         self.fc2 = nn.Linear(hidden_features // 2, out_features, bias=bias)
         self.drop2 = nn.Dropout(drop_probs[1])
 
         assert in_features == out_features
         self.scale = nn.Parameter(1 * torch.ones(out_features))
-        self.bias = nn.Parameter(0. * torch.ones(out_features))
+        self.bias = nn.Parameter(0.0 * torch.ones(out_features))
 
     def forward(self, x):
         res = x
