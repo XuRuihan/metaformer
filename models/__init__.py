@@ -3,3 +3,5 @@ from .test_downsample import *
 from .convnext import *
 from .parcnet_v3 import *
 from .parcnet_v3_bgu import *
+from .parcnet_v2 import *
+from .poolformer_bgu import *

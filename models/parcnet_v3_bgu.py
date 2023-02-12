@@ -390,7 +390,6 @@ class ParC_V3(nn.Module):
 
     def forward(self, x):
         x = self.pwconv1(x)
-        # x = self.act(x)
         x1, x2 = x.chunk(2, -1)
         x2 = self.act(x2)
         x = torch.cat([x1, x2], -1)
@@ -485,46 +484,6 @@ class ParC_V3_cat(nn.Module):
         x = torch.cat([x1, x2], 1)
         x = self.pwconv2(x)
         x = x.permute(0, 2, 3, 1)
-        return x
-
-
-class ParC_V4(nn.Module):
-    def __init__(
-        self,
-        dim,
-        expansion_ratio=3,
-        act1_layer=nn.Identity,
-        act2_layer=nn.GELU,
-        bias=False,
-        kernel_size=7,
-        padding=3,
-        **kwargs,
-    ):
-        super().__init__()
-        med_channels = int(expansion_ratio * dim)
-        self.pwconv1 = nn.Linear(dim, med_channels, bias=bias)
-        self.act1 = act1_layer()
-        # self.dwconv = OversizeConv2d(med_channels, kernel_size, bias)
-        self.dwconv = nn.Conv2d(
-            med_channels,
-            med_channels,
-            kernel_size=kernel_size,
-            padding=padding,
-            groups=med_channels,
-            bias=bias,
-        )  # depthwise conv
-        self.act2 = act2_layer()
-        self.pwconv2 = nn.Linear(med_channels // 2, dim, bias=bias)
-
-    def forward(self, x):
-        x = self.pwconv1(x)
-        x = self.act1(x)
-        x = x.permute(0, 3, 1, 2)
-        x = self.dwconv(x)
-        x = x.permute(0, 2, 3, 1)
-        x1, x2, x3 = x.chunk(3, -1)
-        x = x1 + x2 * self.act2(x3)
-        x = self.pwconv2(x)
         return x
 
 
@@ -627,25 +586,6 @@ class SepConv(nn.Module):
         return x
 
 
-class Pooling(nn.Module):
-    """
-    Implementation of pooling for PoolFormer: https://arxiv.org/abs/2111.11418
-    Modfiled for [B, H, W, C] input
-    """
-
-    def __init__(self, pool_size=3, **kwargs):
-        super().__init__()
-        self.pool = nn.AvgPool2d(
-            pool_size, stride=1, padding=pool_size // 2, count_include_pad=False
-        )
-
-    def forward(self, x):
-        y = x.permute(0, 3, 1, 2)
-        y = self.pool(y)
-        y = y.permute(0, 2, 3, 1)
-        return y - x
-
-
 class Mlp(nn.Module):
     """MLP as used in MetaFormer models, eg Transformer, MLP-Mixer, PoolFormer, MetaFormer baslines and related networks.
     Mostly copied from timm.
@@ -707,9 +647,10 @@ class BGU(nn.Module):
 
     def forward(self, x):
         x = self.fc1(x)
-        x = self.drop1(x)
         x1, x2 = x.chunk(2, -1)
         x = x1 * self.act(x2)
+        # x = self.act(x1 * x2)
+        x = self.drop1(x)
         x = self.fc2(x)
         x = self.drop2(x)
         return x

@@ -360,10 +360,7 @@ class ParC_V3(nn.Module):
         self,
         dim,
         expansion_ratio=2,
-        # act1_layer=nn.Identity,
-        # act2_layer=nn.GELU,
-        act1_layer=nn.GELU,
-        act2_layer=nn.Identity,
+        act_layer=nn.GELU,
         bias=False,
         kernel_size=7,
         padding=3,
@@ -372,7 +369,7 @@ class ParC_V3(nn.Module):
         super().__init__()
         med_channels = int(expansion_ratio * dim)
         self.pwconv1 = nn.Linear(dim, med_channels, bias=bias)
-        self.act1 = act1_layer()
+        self.act = act_layer()
         self.dwconv = nn.Conv2d(
             med_channels,
             med_channels,
@@ -381,20 +378,19 @@ class ParC_V3(nn.Module):
             groups=med_channels,
             bias=bias,
         )  # depthwise conv
-        self.act2 = act2_layer()
         self.pwconv2 = nn.Linear(med_channels // 2, dim, bias=bias)
 
     def forward(self, x):
         x = self.pwconv1(x)
-        # x = self.act1(x)
+        # x = self.act(x)
         x1, x2 = x.chunk(2, -1)
-        x2 = self.act1(x2)
+        x2 = self.act(x2)
         x = torch.cat([x1, x2], -1)
         x = x.permute(0, 3, 1, 2)
         x = self.dwconv(x)
         x = x.permute(0, 2, 3, 1)
         x1, x2 = x.chunk(2, -1)
-        x = x1 * self.act2(x2)
+        x = x1 * x2
         x = self.pwconv2(x)
         return x
 
@@ -409,10 +405,7 @@ class ParC_V3_add(nn.Module):
         self,
         dim,
         expansion_ratio=2,
-        # act1_layer=nn.Identity,
-        # act2_layer=nn.GELU,
-        act1_layer=nn.GELU,
-        act2_layer=nn.Identity,
+        act_layer=nn.GELU,
         bias=False,
         kernel_size=7,
         global_kernel_size=14,
@@ -422,7 +415,7 @@ class ParC_V3_add(nn.Module):
         super().__init__()
         med_channels = int(expansion_ratio * dim)
         self.pwconv1 = nn.Conv2d(dim, med_channels, 1, bias=bias)
-        self.act1 = act1_layer()
+        self.act = act_layer()
         self.dwconv1 = OversizeConv2d(med_channels, global_kernel_size, bias)
         self.dwconv2 = nn.Conv2d(
             med_channels,
@@ -432,19 +425,18 @@ class ParC_V3_add(nn.Module):
             groups=med_channels,
             bias=bias,
         )  # depthwise conv
-        self.act2 = act2_layer()
         self.pwconv2 = nn.Conv2d(med_channels // 2, dim, 1, bias=bias)
 
     def forward(self, x):
         x = x.permute(0, 3, 1, 2)
         x = self.pwconv1(x)
-        # x = self.act1(x)
+        # x = self.act(x)
         x1, x2 = x.chunk(2, 1)
-        x2 = self.act1(x2)
+        x2 = self.act(x2)
         x = torch.cat([x1, x2], 1)
         x = self.dwconv1(x) + self.dwconv2(x)
         x1, x2 = x.chunk(2, 1)
-        x = x1 * self.act2(x2)
+        x = x1 * x2
         x = self.pwconv2(x)
         x = x.permute(0, 2, 3, 1)
         return x
@@ -460,10 +452,7 @@ class ParC_V3_cat(nn.Module):
         self,
         dim,
         expansion_ratio=2,
-        # act1_layer=nn.Identity,
-        # act2_layer=nn.GELU,
-        act1_layer=nn.GELU,
-        act2_layer=nn.Identity,
+        act_layer=nn.GELU,
         bias=False,
         kernel_size=7,
         global_kernel_size=14,
@@ -473,7 +462,7 @@ class ParC_V3_cat(nn.Module):
         super().__init__()
         med_channels = int(expansion_ratio * dim)
         self.pwconv1 = nn.Conv2d(dim, med_channels, 1, bias=bias)
-        self.act1 = act1_layer()
+        self.act = act_layer()
         self.dwconv1 = OversizeConv2d(med_channels // 2, global_kernel_size, bias)
         self.dwconv2 = nn.Conv2d(
             med_channels // 2,
@@ -483,78 +472,21 @@ class ParC_V3_cat(nn.Module):
             groups=med_channels // 2,
             bias=bias,
         )  # depthwise conv
-        self.act2 = act2_layer()
         self.pwconv2 = nn.Conv2d(med_channels // 2, dim, 1, bias=bias)
 
     def forward(self, x):
         x = x.permute(0, 3, 1, 2)
         x = self.pwconv1(x)
-        # x = self.act1(x)
+        # x = self.act(x)
         x1_1, x1_2, x2_1, x2_2 = x.chunk(4, 1)
-        x1_2, x2_2 = self.act1(x1_2), self.act1(x2_2)
+        x1_2, x2_2 = self.act(x1_2), self.act(x2_2)
         x1_1, x1_2 = self.dwconv1(torch.cat([x1_1, x1_2], 1)).chunk(2, 1)
         x2_1, x2_2 = self.dwconv2(torch.cat([x2_1, x2_2], 1)).chunk(2, 1)
-        x1 = x1_1 * self.act2(x1_2)
-        x2 = x2_1 * self.act2(x2_2)
+        x1 = x1_1 * x1_2
+        x2 = x2_1 * x2_2
         x = torch.cat([x1, x2], 1)
         x = self.pwconv2(x)
         x = x.permute(0, 2, 3, 1)
-        return x
-
-
-class ParC_V4(nn.Module):
-    def __init__(
-        self,
-        dim,
-        expansion_ratio=3,
-        act1_layer=nn.Identity,
-        act2_layer=nn.GELU,
-        bias=False,
-        kernel_size=7,
-        padding=3,
-        **kwargs,
-    ):
-        super().__init__()
-        med_channels = int(expansion_ratio * dim)
-        self.pwconv1 = nn.Linear(dim, med_channels, bias=bias)
-        self.act1 = act1_layer()
-        # self.dwconv = OversizeConv2d(med_channels, kernel_size, bias)
-        self.dwconv = nn.Conv2d(
-            med_channels,
-            med_channels,
-            kernel_size=kernel_size,
-            padding=padding,
-            groups=med_channels,
-            bias=bias,
-        )  # depthwise conv
-        self.act2 = act2_layer()
-        self.pwconv2 = nn.Linear(med_channels // 2, dim, bias=bias)
-
-    def forward(self, x):
-        x = self.pwconv1(x)
-        x = self.act1(x)
-        x = x.permute(0, 3, 1, 2)
-        x = self.dwconv(x)
-        x = x.permute(0, 2, 3, 1)
-        x1, x2, x3 = x.chunk(3, -1)
-        x = x1 + x2 * self.act2(x3)
-        x = self.pwconv2(x)
-        return x
-
-
-class RandomMixing(nn.Module):
-    def __init__(self, num_tokens=196, **kwargs):
-        super().__init__()
-        self.random_matrix = nn.parameter.Parameter(
-            data=torch.softmax(torch.rand(num_tokens, num_tokens), dim=-1),
-            requires_grad=False,
-        )
-
-    def forward(self, x):
-        B, H, W, C = x.shape
-        x = x.reshape(B, H * W, C)
-        x = torch.einsum("mn, bnc -> bmc", self.random_matrix, x)
-        x = x.reshape(B, H, W, C)
         return x
 
 
@@ -657,25 +589,6 @@ class SepConv(nn.Module):
         return x
 
 
-class Pooling(nn.Module):
-    """
-    Implementation of pooling for PoolFormer: https://arxiv.org/abs/2111.11418
-    Modfiled for [B, H, W, C] input
-    """
-
-    def __init__(self, pool_size=3, **kwargs):
-        super().__init__()
-        self.pool = nn.AvgPool2d(
-            pool_size, stride=1, padding=pool_size // 2, count_include_pad=False
-        )
-
-    def forward(self, x):
-        y = x.permute(0, 3, 1, 2)
-        y = self.pool(y)
-        y = y.permute(0, 2, 3, 1)
-        return y - x
-
-
 class Mlp(nn.Module):
     """MLP as used in MetaFormer models, eg Transformer, MLP-Mixer, PoolFormer, MetaFormer baslines and related networks.
     Mostly copied from timm.
@@ -707,39 +620,6 @@ class Mlp(nn.Module):
         x = self.fc1(x)
         x = self.act(x)
         x = self.drop1(x)
-        x = self.fc2(x)
-        x = self.drop2(x)
-        return x
-
-
-class BGU(nn.Module):
-    def __init__(
-        self,
-        dim,
-        mlp_ratio=5,
-        out_features=None,
-        act_layer=nn.GELU,
-        drop=0.0,
-        bias=False,
-        **kwargs,
-    ):
-        super().__init__()
-        in_features = dim
-        out_features = out_features or in_features
-        hidden_features = int(mlp_ratio * in_features)
-        drop_probs = to_2tuple(drop)
-
-        self.fc1 = nn.Linear(in_features, hidden_features, bias=bias)
-        self.act = act_layer()
-        self.drop1 = nn.Dropout(drop_probs[0])
-        self.fc2 = nn.Linear(hidden_features // 2, out_features, bias=bias)
-        self.drop2 = nn.Dropout(drop_probs[1])
-
-    def forward(self, x):
-        x = self.fc1(x)
-        x = self.drop1(x)
-        x1, x2 = x.chunk(2, -1)
-        x = x1 * self.act(x2)
         x = self.fc2(x)
         x = self.drop2(x)
         return x
@@ -1018,24 +898,6 @@ def convformer_s12(pretrained=False, **kwargs):
 
 
 @register_model
-def caformer_s12(pretrained=False, **kwargs):
-    model = MetaFormer(
-        depths=[2, 2, 6, 2],
-        dims=[64, 128, 320, 512],
-        token_mixers=[SepConv, SepConv, Attention, Attention],
-        head_fn=MlpHead,
-        **kwargs,
-    )
-    model.default_cfg = default_cfgs["caformer_s18"]
-    if pretrained:
-        state_dict = torch.hub.load_state_dict_from_url(
-            url=model.default_cfg["url"], map_location="cpu", check_hash=True
-        )
-        model.load_state_dict(state_dict)
-    return model
-
-
-@register_model
 def parcnet_v3_s12(pretrained=False, **kwargs):
     model = MetaFormer(
         depths=[2, 2, 6, 2],
@@ -1069,23 +931,3 @@ def parcnet_v3_s18(pretrained=False, **kwargs):
         )
         model.load_state_dict(state_dict)
     return model
-
-
-@register_model
-def parcnet_v2_cvpr(pretrained=False, **kwargs):
-    model = MetaFormer(
-        depths=[3, 3, 12, 3],
-        dims=[64, 128, 320, 512],
-        # token_mixers=ParC_V3,
-        token_mixers=ParC_V3_add,
-        mlps=BGU,
-        **kwargs,
-    )
-    model.default_cfg = default_cfgs["convformer_s18"]
-    if pretrained:
-        state_dict = torch.hub.load_state_dict_from_url(
-            url=model.default_cfg["url"], map_location="cpu", check_hash=True
-        )
-        model.load_state_dict(state_dict)
-    return model
-
