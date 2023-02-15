@@ -5,18 +5,20 @@ import sys
 
 sys.path.extend([".", ".."])
 
-from models import convnext_xt, convnext_xt_nobottleneck, convnext_tiny
 from models.parcnet_v3 import parcnet_v3_s12, parcnet_v3_s18
 from models.parcnet_v3_bgu import parcnet_v3_bgu_s18
-from models.parcnet_v2 import parcnet_v2_s12, parcnet_v2_e2_s12, parcnet_v2_s18, parcnet_v2_e2_s18, parcnet_v2_cvpr
+from models.parcnet_v2 import parcnet_v2_s12, parcnet_v2_e2_s12, parcnet_v2_s18, parcnet_v2_e2_s18, parcnet_v2_cvpr, parcnet_v2_mlp
+from models.poolformer_bgu import poolformerv2_bgu_s12
 from models.conv2former import conv2former_tiny
-from models.swin import swin_tiny
+from models.swin import swin_tiny, swin_small
+from models.convnext import convnext_tiny, convnext_small
 from models.hornet import hornet_tiny_7x7
 
 
 dim = 3
 image_size = 224
-if torch.cuda.is_available():
+use_cuda = True  # torch.cuda.is_available()
+if use_cuda:
     device = "cuda"
     times = 100
     x = torch.rand(32, dim, image_size, image_size).to(device)
@@ -39,8 +41,11 @@ models = {
     # "parcnet_v2_e2_s18": parcnet_v2_e2_s18().to(device),
     # "convnext_xt": convnext_xt().to(device),
     "convnext_tiny": convnext_tiny().to(device),
+    "convnext_small": convnext_small().to(device),
     "swin_tiny": swin_tiny().to(device),
+    "swin_small": swin_small().to(device),
     "parcnet_v2_cvpr": parcnet_v2_cvpr().to(device),
+    # "poolformerv2_bgu_s12": poolformerv2_bgu_s12().to(device),
     # "hornet_tiny_7x7": hornet_tiny_7x7().to(device)
 }
 

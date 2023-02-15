@@ -13,6 +13,7 @@ from models import convformer_s12, convformer_s18
 from models.parcnet_v3 import parcnet_v3_s12, parcnet_v3_s18
 from models.parcnet_v3_bgu import parcnet_v3_bgu_s12, parcnet_v3_bgu_s18
 from models.parcnet_v2 import parcnet_v2_cvpr
+from models.poolformer_bgu import poolformerv2_bgu_s12
 from models.hornet import hornet_tiny_7x7
 
 

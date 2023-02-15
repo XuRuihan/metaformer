@@ -226,7 +226,10 @@ class PGELU(nn.Module):
         self.num_parameters = num_parameters
         super(PGELU, self).__init__()
         self.gelu = nn.GELU()
-        self.weight = nn.Parameter(
+        self.weight_1 = nn.Parameter(
+            torch.empty(num_parameters, **factory_kwargs).fill_(weight_init), requires_grad=weight_learnable
+        )
+        self.weight_2 = nn.Parameter(
             torch.empty(num_parameters, **factory_kwargs).fill_(weight_init), requires_grad=weight_learnable
         )
         self.bias = nn.Parameter(
@@ -235,7 +238,8 @@ class PGELU(nn.Module):
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         # return self.gelu(x) - self.weight * x + self.bias
-        return (1 - 2 * self.weight) * self.gelu(x) + self.weight * x + self.bias
+        # return (1 - 2 * self.weight) * self.gelu(x) + self.weight * x + self.bias
+        return (self.weight_1 - self.weight_2) * self.gelu(x) + self.weight_2 * x + self.bias
 
     def extra_repr(self) -> str:
         return "num_parameters={}".format(self.num_parameters)
@@ -326,7 +330,8 @@ class Mlp(nn.Module):
         dim,
         mlp_ratio=4,
         out_features=None,
-        act_layer=StarReLU,
+        # act_layer=StarReLU,
+        act_layer=nn.GELU,
         drop=0.0,
         bias=False,
         **kwargs,
@@ -337,7 +342,7 @@ class Mlp(nn.Module):
         hidden_features = int(mlp_ratio * in_features)
         drop_probs = to_2tuple(drop)
 
-        self.fc1 = nn.Linear(in_features, hidden_features, bias=bias)
+        self.fc1 = nn.Linear(in_features, hidden_features, bias=True)
         self.act = act_layer()
         self.drop1 = nn.Dropout(drop_probs[0])
         self.fc2 = nn.Linear(hidden_features, out_features, bias=bias)
@@ -359,6 +364,7 @@ class BGU(nn.Module):
         mlp_ratio=4,
         out_features=None,
         act_layer=PGELU,
+        # act_layer=nn.Sigmoid,
         drop=0.0,
         bias=False,
         **kwargs,
@@ -371,6 +377,7 @@ class BGU(nn.Module):
 
         self.fc1 = nn.Linear(in_features, hidden_features, bias=True)
         self.act = act_layer(hidden_features // 2)
+        # self.act = act_layer()
         self.drop1 = nn.Dropout(drop_probs[0])
         self.fc2 = nn.Linear(hidden_features // 2, out_features, bias=bias)
         self.drop2 = nn.Dropout(drop_probs[1])
@@ -460,6 +467,40 @@ class BGUv3(nn.Module):
         # x = self.act(x1 * x2)
         x = self.drop1(x)
         x = self.fc2(x) + self.scale * res + self.bias
+        x = self.drop2(x)
+        return x
+
+
+class BGUv4(nn.Module):
+    def __init__(
+        self,
+        dim,
+        mlp_ratio=4,
+        out_features=None,
+        act_layer=PGELU,
+        drop=0.0,
+        bias=False,
+        **kwargs,
+    ):
+        super().__init__()
+        in_features = dim
+        out_features = out_features or in_features
+        hidden_features = int(mlp_ratio * in_features)
+        drop_probs = to_2tuple(drop)
+
+        self.fc1 = nn.Linear(in_features, hidden_features, bias=True)
+        self.act = act_layer(hidden_features)
+        self.drop1 = nn.Dropout(drop_probs[0])
+        self.fc2 = nn.Linear(hidden_features // 2, out_features, bias=bias)
+        self.drop2 = nn.Dropout(drop_probs[1])
+
+    def forward(self, x):
+        x = self.fc1(x)
+        x = self.act(x)
+        x1, x2 = x.chunk(2, -1)
+        x = x1 * x2
+        x = self.drop1(x)
+        x = self.fc2(x)
         x = self.drop2(x)
         return x
 
@@ -756,6 +797,7 @@ def poolformerv2_s12(pretrained=False, **kwargs):
         depths=[2, 2, 6, 2],
         dims=[64, 128, 320, 512],
         token_mixers=Pooling,
+        mlps=partial(Mlp, mlp_ratio=3.75),
         norm_layers=partial(
             LayerNormGeneral, normalized_dim=(1, 2, 3), eps=1e-6, bias=False
         ),
@@ -819,6 +861,27 @@ def poolformerv2_bguv3_s12(pretrained=False, **kwargs):
         dims=[64, 128, 320, 512],
         token_mixers=Pooling,
         mlps=partial(BGUv3, mlp_ratio=5),
+        norm_layers=partial(
+            LayerNormGeneral, normalized_dim=(1, 2, 3), eps=1e-6, bias=False
+        ),
+        **kwargs,
+    )
+    model.default_cfg = default_cfgs["poolformerv2_s12"]
+    if pretrained:
+        state_dict = torch.hub.load_state_dict_from_url(
+            url=model.default_cfg["url"], map_location="cpu", check_hash=True
+        )
+        model.load_state_dict(state_dict)
+    return model
+
+
+@register_model
+def poolformerv2_bguv4_s12(pretrained=False, **kwargs):
+    model = MetaFormer(
+        depths=[2, 2, 6, 2],
+        dims=[64, 128, 320, 512],
+        token_mixers=Pooling,
+        mlps=partial(BGUv4, mlp_ratio=5),
         norm_layers=partial(
             LayerNormGeneral, normalized_dim=(1, 2, 3), eps=1e-6, bias=False
         ),

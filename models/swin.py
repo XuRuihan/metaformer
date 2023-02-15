@@ -618,3 +618,15 @@ def swin_tiny(pretrained=False, **kwargs):
     )
     return model
 
+
+@register_model
+def swin_small(pretrained=False, **kwargs):
+    model = SwinTransformer(
+        drop_path_rate=0.3,
+        embed_dim=96,
+        depths=[2, 2, 18, 2],
+        num_heads=[3, 6, 12, 24],
+        **kwargs,
+    )
+    return model
+
