@@ -26,6 +26,8 @@ from timm.models.registry import register_model
 from timm.data import IMAGENET_DEFAULT_MEAN, IMAGENET_DEFAULT_STD
 from timm.models.layers.helpers import to_2tuple
 
+from depthwise_conv2d_implicit_gemm import DepthWiseConv2dImplicitGEMM as Conv2d
+
 
 def _cfg(url="", **kwargs):
     return {
@@ -273,12 +275,8 @@ class OversizeConv2d(nn.Module):
             padding = interpolate // 2
             interpolate = to_2tuple(interpolate)
 
-        self.conv_h = nn.Conv2d(
-            dim, dim, (kernel_size, 1), padding=(padding, 0), groups=dim, bias=bias
-        )
-        self.conv_w = nn.Conv2d(
-            dim, dim, (1, kernel_size), padding=(0, padding), groups=dim, bias=bias
-        )
+        self.conv_h = Conv2d(dim, (kernel_size, 1))
+        self.conv_w = Conv2d(dim, (1, kernel_size))
 
         self.dim = dim
         self.kernel_size = kernel_size
@@ -332,8 +330,6 @@ class OversizeConv2d(nn.Module):
 
 
 class ParC_V2(nn.Module):
-    """nn.Conv2d is much faster than nn.Linear during back propagation
-    """
     def __init__(
         self,
         dim,

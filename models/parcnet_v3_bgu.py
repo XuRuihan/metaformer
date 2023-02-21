@@ -206,30 +206,6 @@ class StarReLU(nn.Module):
         return self.scale * self.relu(x) ** 2 + self.bias
 
 
-class StarGELU(nn.Module):
-    def __init__(
-        self,
-        scale_value=1.0,
-        bias_value=0.0,
-        scale_learnable=False,
-        bias_learnable=True,
-        mode=None,
-        inplace=False,
-    ):
-        super().__init__()
-        self.inplace = inplace
-        self.gelu = nn.GELU()
-        self.scale = nn.Parameter(
-            scale_value * torch.ones(1), requires_grad=scale_learnable
-        )
-        self.bias = nn.Parameter(
-            bias_value * torch.ones(1), requires_grad=bias_learnable
-        )
-
-    def forward(self, x):
-        return self.scale * self.gelu(x) + self.bias
-
-
 class Attention(nn.Module):
     """
     Vanilla self-attention from Transformer: https://arxiv.org/abs/1706.03762.
@@ -368,7 +344,7 @@ class ParC_V3(nn.Module):
         self,
         dim,
         expansion_ratio=2,
-        act_layer=StarGELU,
+        act_layer=nn.GELU,
         bias=False,
         kernel_size=7,
         padding=3,
@@ -407,7 +383,7 @@ class ParC_V3_add(nn.Module):
         self,
         dim,
         expansion_ratio=2,
-        act_layer=StarGELU,
+        act_layer=nn.GELU,
         bias=False,
         kernel_size=7,
         global_kernel_size=14,
@@ -628,7 +604,7 @@ class BGU(nn.Module):
         dim,
         mlp_ratio=4,
         out_features=None,
-        act_layer=StarGELU,
+        act_layer=nn.GELU,
         drop=0.0,
         bias=False,
         **kwargs,
@@ -664,7 +640,7 @@ class MlpHead(nn.Module):
         dim,
         num_classes=1000,
         mlp_ratio=2,
-        act_layer=StarGELU,
+        act_layer=nn.GELU,
         norm_layer=nn.LayerNorm,
         head_dropout=0.0,
         bias=True,
