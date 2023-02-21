@@ -9,12 +9,12 @@ import sys
 sys.path.extend([".", ".."])
 
 from models.parcnet_v3_bgu import parcnet_v3_bgu_s18
-from models.parcnet_v2 import parcnet_v2_tiny
+from models.parcnetv2 import parcnetv2_tiny
 from models.hornet import hornet_tiny_7x7
 
 
 if __name__ == "__main__":
-    model = parcnet_v2_tiny(pretrained=False)
+    model = parcnetv2_tiny(pretrained=False)
     device = torch.device("cpu")
     model.eval()
     model.to(device)
@@ -32,4 +32,4 @@ if __name__ == "__main__":
     ) as prof:
         outputs = model(dump_input)
     print(prof.table())
-    prof.export_chrome_trace("log/parcnet_v2_tiny_profile.json")
+    prof.export_chrome_trace("log/parcnetv2_tiny_profile.json")

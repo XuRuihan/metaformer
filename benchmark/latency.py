@@ -7,16 +7,16 @@ sys.path.extend([".", ".."])
 
 from models.parcnet_v3 import parcnet_v3_s12, parcnet_v3_s18
 from models.parcnet_v3_bgu import parcnet_v3_bgu_s18
-from models.parcnet_v2 import (
-    parcnet_v2_s12,
-    parcnet_v2_e2_s12,
-    parcnet_v2_s18,
-    parcnet_v2_44_tiny,
-    parcnet_v2_26_tiny,
-    parcnet_v2_tiny,
-    parcnet_v2_lasthalf_tiny,
-    parcnet_v2_mlp,
-    parcnet_v2_small,
+from models.parcnetv2 import (
+    parcnetv2_s12,
+    parcnetv2_e2_s12,
+    parcnetv2_s18,
+    parcnetv2_44_tiny,
+    parcnetv2_26_tiny,
+    parcnetv2_tiny,
+    parcnetv2_lasthalf_tiny,
+    parcnetv2_mlp,
+    parcnetv2_small,
 )
 from models.poolformer_bgu import poolformerv2_bgu_s12
 from models.conv2former import conv2former_tiny
@@ -45,14 +45,14 @@ models = {
     # "parcnet_v3_s12": parcnet_v3_s12().to(device),
     # "parcnet_v3_s18": parcnet_v3_s18().to(device),
     # "parcnet_v3_bgu_s18": parcnet_v3_bgu_s18().to(device),
-    # "parcnet_v2_s12": parcnet_v2_s12().to(device),
-    # "parcnet_v2_e2_s12": parcnet_v2_e2_s12().to(device),
-    # "parcnet_v2_s18": parcnet_v2_s18().to(device),
-    # "parcnet_v2_tiny": parcnet_v2_tiny().to(device),
-    # "parcnet_v2_lasthalf_tiny": parcnet_v2_lasthalf_tiny().to(device),
-    # "parcnet_v2_26_tiny": parcnet_v2_26_tiny().to(device),
-    # "parcnet_v2_44_tiny": parcnet_v2_44_tiny().to(device),
-    "parcnet_v2_small": parcnet_v2_small().to(device),
+    # "parcnetv2_s12": parcnetv2_s12().to(device),
+    # "parcnetv2_e2_s12": parcnetv2_e2_s12().to(device),
+    # "parcnetv2_s18": parcnetv2_s18().to(device),
+    # "parcnetv2_tiny": parcnetv2_tiny().to(device),
+    # "parcnetv2_lasthalf_tiny": parcnetv2_lasthalf_tiny().to(device),
+    # "parcnetv2_26_tiny": parcnetv2_26_tiny().to(device),
+    # "parcnetv2_44_tiny": parcnetv2_44_tiny().to(device),
+    "parcnetv2_small": parcnetv2_small().to(device),
     # "convnext_xt": convnext_xt().to(device),
     # "convnext_tiny": convnext_tiny().to(device),
     "convnext_small": convnext_small().to(device),

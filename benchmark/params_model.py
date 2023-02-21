@@ -17,14 +17,14 @@ from models.parcnet_v3_bgu import (
     parcnet_v3_bgu_s18,
     parcnet_v3_bgu4_s18,
 )
-from models.parcnet_v2 import (
-    parcnet_v2_tiny,
-    parcnet_v2_mlp,
-    parcnet_v2_44_tiny,
-    parcnet_v2_26_tiny,
-    parcnet_v2_lasthalf_tiny,
-    parcnet_v2_small,
-    parcnet_v2_base,
+from models.parcnetv2 import (
+    parcnetv2_tiny,
+    parcnetv2_mlp,
+    parcnetv2_44_tiny,
+    parcnetv2_26_tiny,
+    parcnetv2_lasthalf_tiny,
+    parcnetv2_small,
+    parcnetv2_base,
 )
 from models.poolformer_bgu import poolformerv2_bgu_s12
 from models.conv2former import conv2former_tiny
@@ -48,13 +48,13 @@ models = {
     # "parcnet_v3_bgu_s12": parcnet_v3_bgu_s12(),
     # "parcnet_v3_bgu4_s12": parcnet_v3_bgu4_s12(),
     # "conv2former_tiny": conv2former_tiny(),
-    # "parcnet_v2_tiny": parcnet_v2_tiny(),
-    # "parcnet_v2_lasthalf_tiny": parcnet_v2_lasthalf_tiny(),
-    # "parcnet_v2_mlp": parcnet_v2_mlp(),
-    # "parcnet_v2_44_tiny": parcnet_v2_44_tiny(),
-    # "parcnet_v2_26_tiny": parcnet_v2_26_tiny(),
-    "parcnet_v2_small": parcnet_v2_small(),
-    "parcnet_v2_base": parcnet_v2_base(),
+    # "parcnetv2_tiny": parcnetv2_tiny(),
+    # "parcnetv2_lasthalf_tiny": parcnetv2_lasthalf_tiny(),
+    # "parcnetv2_mlp": parcnetv2_mlp(),
+    # "parcnetv2_44_tiny": parcnetv2_44_tiny(),
+    # "parcnetv2_26_tiny": parcnetv2_26_tiny(),
+    "parcnetv2_small": parcnetv2_small(),
+    "parcnetv2_base": parcnetv2_base(),
     # "swin_tiny": swin_tiny(),
     # "swin_small": swin_small(),
     "swin_base": swin_base(),

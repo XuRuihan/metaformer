@@ -810,7 +810,7 @@ class MetaFormer(nn.Module):
 
 
 @register_model
-def parcnet_v2_s12(pretrained=False, **kwargs):
+def parcnetv2_s12(pretrained=False, **kwargs):
     model = MetaFormer(
         depths=[2, 2, 6, 2],
         dims=[64, 128, 384, 672],
@@ -831,7 +831,7 @@ def parcnet_v2_s12(pretrained=False, **kwargs):
 
 
 @register_model
-def parcnet_v2_e2_s12(pretrained=False, **kwargs):
+def parcnetv2_e2_s12(pretrained=False, **kwargs):
     model = MetaFormer(
         depths=[2, 2, 6, 2],
         dims=[96, 192, 448, 672],
@@ -852,7 +852,7 @@ def parcnet_v2_e2_s12(pretrained=False, **kwargs):
 
 
 @register_model
-def parcnet_v2_s18(pretrained=False, **kwargs):
+def parcnetv2_s18(pretrained=False, **kwargs):
     model = MetaFormer(
         depths=[3, 3, 9, 3],
         dims=[64, 128, 384, 672],
@@ -872,7 +872,7 @@ def parcnet_v2_s18(pretrained=False, **kwargs):
 
 
 @register_model
-def parcnet_v2_26_tiny(pretrained=False, **kwargs):
+def parcnetv2_26_tiny(pretrained=False, **kwargs):
     model = MetaFormer(
         depths=[3, 3, 9, 3],
         dims=[64, 128, 320, 512],
@@ -891,7 +891,7 @@ def parcnet_v2_26_tiny(pretrained=False, **kwargs):
 
 
 @register_model
-def parcnet_v2_35_tiny(pretrained=False, **kwargs):
+def parcnetv2_35_tiny(pretrained=False, **kwargs):
     model = MetaFormer(
         depths=[3, 3, 9, 3],
         dims=[64, 128, 320, 512],
@@ -910,7 +910,7 @@ def parcnet_v2_35_tiny(pretrained=False, **kwargs):
 
 
 @register_model
-def parcnet_v2_44_tiny(pretrained=False, **kwargs):
+def parcnetv2_44_tiny(pretrained=False, **kwargs):
     model = MetaFormer(
         depths=[3, 3, 9, 3],
         dims=[64, 128, 320, 512],
@@ -929,7 +929,7 @@ def parcnet_v2_44_tiny(pretrained=False, **kwargs):
 
 
 @register_model
-def parcnet_v2_tiny(pretrained=False, **kwargs):
+def parcnetv2_tiny(pretrained=False, **kwargs):
     model = MetaFormer(
         depths=[3, 3, 12, 3],
         dims=[64, 128, 320, 512],
@@ -947,7 +947,7 @@ def parcnet_v2_tiny(pretrained=False, **kwargs):
 
 
 @register_model
-def parcnet_v2_lasthalf_tiny(pretrained=False, **kwargs):
+def parcnetv2_lasthalf_tiny(pretrained=False, **kwargs):
     model = MetaFormer(
         depths=[3, 3, 12, 3],
         dims=[64, 128, 320, 512],
@@ -965,7 +965,7 @@ def parcnet_v2_lasthalf_tiny(pretrained=False, **kwargs):
 
 
 @register_model
-def parcnet_v2_mlp(pretrained=False, **kwargs):
+def parcnetv2_mlp(pretrained=False, **kwargs):
     model = MetaFormer(
         depths=[3, 3, 12, 3],
         dims=[64, 128, 320, 512],
@@ -983,7 +983,7 @@ def parcnet_v2_mlp(pretrained=False, **kwargs):
 
 
 @register_model
-def parcnet_v2_small(pretrained=False, **kwargs):
+def parcnetv2_small(pretrained=False, **kwargs):
     model = MetaFormer(
         depths=[3, 9, 24, 3],
         dims=[64, 128, 320, 512],
@@ -1001,7 +1001,7 @@ def parcnet_v2_small(pretrained=False, **kwargs):
 
 
 @register_model
-def parcnet_v2_base(pretrained=False, **kwargs):
+def parcnetv2_base(pretrained=False, **kwargs):
     model = MetaFormer(
         depths=[3, 9, 24, 3],
         dims=[96, 192, 384, 576],
