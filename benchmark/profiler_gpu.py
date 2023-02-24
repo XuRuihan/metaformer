@@ -13,7 +13,6 @@ from models.parcnetv2 import (
     parcnetv2_s12,
     parcnetv2_e2_s12,
     parcnetv2_s18,
-    parcnetv2_44_tiny,
     parcnetv2_tiny,
 )
 from models.poolformer_bgu import poolformerv2_bgu_s12
@@ -26,8 +25,6 @@ from models.hornet import hornet_tiny_7x7
 if __name__ == "__main__":
     # model = parcnetv2_tiny(pretrained=False)
     # log_file = "log/parcnetv2_tiny_ideal_profile.json"
-    model = parcnetv2_44_tiny(pretrained=False)
-    log_file = "log/parcnetv2_44_tiny_profile.json"
     # model = poolformerv2_bgu_s12(pretrained=False)
     # log_file = "log/poolformerv2_bgu_s12_profile.json"
     # model = hornet_tiny_7x7(pretrained=False)

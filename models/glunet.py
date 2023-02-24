@@ -246,7 +246,7 @@ class PGELU(nn.Module):
     ) -> None:
         factory_kwargs = {"device": device, "dtype": dtype}
         self.num_parameters = num_parameters
-        super(PGELU, self).__init__()
+        super().__init__()
         self.gelu = nn.GELU()
         self.weight_1 = nn.Parameter(
             torch.empty(num_parameters, **factory_kwargs).fill_(weight_init),
@@ -256,10 +256,10 @@ class PGELU(nn.Module):
             torch.empty(num_parameters, **factory_kwargs).fill_(weight_init),
             requires_grad=weight_learnable,
         )
-        self.bias = nn.Parameter(
-            torch.empty(num_parameters, **factory_kwargs).fill_(bias_init),
-            requires_grad=bias_learnable,
-        )
+        # self.bias = nn.Parameter(
+        #     torch.empty(num_parameters, **factory_kwargs).fill_(bias_init),
+        #     requires_grad=bias_learnable,
+        # )
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         # return self.gelu(x) - self.weight * x + self.bias
@@ -267,7 +267,7 @@ class PGELU(nn.Module):
         return (
             (self.weight_1 - self.weight_2) * self.gelu(x)
             + self.weight_2 * x
-            + self.bias
+            # + self.bias
         )
 
     def extra_repr(self) -> str:

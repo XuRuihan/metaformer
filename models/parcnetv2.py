@@ -334,6 +334,7 @@ class OversizeConv2d(nn.Module):
 class ParC_V2(nn.Module):
     """nn.Conv2d is much faster than nn.Linear during back propagation
     """
+
     def __init__(
         self,
         dim,
@@ -876,69 +877,30 @@ def parcnetv2_s18(pretrained=False, **kwargs):
 
 
 @register_model
-def parcnetv2_26_tiny(pretrained=False, **kwargs):
-    model = MetaFormer(
-        depths=[3, 3, 9, 3],
-        dims=[64, 128, 320, 512],
-        # downsample_layers=DOWNSAMPLE_LAYERS_FOUR_STAGES_GROUP,
-        token_mixers=ParC_V2_add,
-        mlps=partial(BGU, mlp_ratio=6),
-        **kwargs,
-    )
-    model.default_cfg = default_cfgs["convformer_s18"]
-    if pretrained:
-        state_dict = torch.hub.load_state_dict_from_url(
-            url=model.default_cfg["url"], map_location="cpu", check_hash=True
-        )
-        model.load_state_dict(state_dict)
-    return model
-
-
-@register_model
-def parcnetv2_35_tiny(pretrained=False, **kwargs):
-    model = MetaFormer(
-        depths=[3, 3, 9, 3],
-        dims=[64, 128, 320, 512],
-        # downsample_layers=DOWNSAMPLE_LAYERS_FOUR_STAGES_GROUP,
-        token_mixers=partial(ParC_V2_add, expansion_ratio=3),
-        mlps=partial(BGU, mlp_ratio=5),
-        **kwargs,
-    )
-    model.default_cfg = default_cfgs["convformer_s18"]
-    if pretrained:
-        state_dict = torch.hub.load_state_dict_from_url(
-            url=model.default_cfg["url"], map_location="cpu", check_hash=True
-        )
-        model.load_state_dict(state_dict)
-    return model
-
-
-@register_model
-def parcnetv2_44_tiny(pretrained=False, **kwargs):
-    model = MetaFormer(
-        depths=[3, 3, 9, 3],
-        dims=[64, 128, 320, 512],
-        # downsample_layers=DOWNSAMPLE_LAYERS_FOUR_STAGES_GROUP,
-        token_mixers=partial(ParC_V2_add, expansion_ratio=4),
-        mlps=BGU,
-        **kwargs,
-    )
-    model.default_cfg = default_cfgs["convformer_s18"]
-    if pretrained:
-        state_dict = torch.hub.load_state_dict_from_url(
-            url=model.default_cfg["url"], map_location="cpu", check_hash=True
-        )
-        model.load_state_dict(state_dict)
-    return model
-
-
-@register_model
 def parcnetv2_tiny(pretrained=False, **kwargs):
     model = MetaFormer(
         depths=[3, 3, 12, 3],
         dims=[64, 128, 320, 512],
         token_mixers=ParC_V2_add,
         mlps=partial(BGU, mlp_ratio=5),
+        **kwargs,
+    )
+    model.default_cfg = default_cfgs["convformer_s18"]
+    if pretrained:
+        state_dict = torch.hub.load_state_dict_from_url(
+            url=model.default_cfg["url"], map_location="cpu", check_hash=True
+        )
+        model.load_state_dict(state_dict)
+    return model
+
+
+@register_model
+def parcnetv2_26_tiny(pretrained=False, **kwargs):
+    model = MetaFormer(
+        depths=[3, 3, 9, 3],
+        dims=[64, 128, 320, 512],
+        token_mixers=ParC_V2_add,
+        mlps=partial(BGU, mlp_ratio=6),
         **kwargs,
     )
     model.default_cfg = default_cfgs["convformer_s18"]
@@ -1005,12 +967,48 @@ def parcnetv2_small(pretrained=False, **kwargs):
 
 
 @register_model
+def parcnetv2_26_small(pretrained=False, **kwargs):
+    model = MetaFormer(
+        depths=[3, 12, 18, 3],
+        dims=[64, 128, 320, 512],
+        token_mixers=ParC_V2_add,
+        mlps=partial(BGU, mlp_ratio=6),
+        **kwargs,
+    )
+    model.default_cfg = default_cfgs["convformer_s18"]
+    if pretrained:
+        state_dict = torch.hub.load_state_dict_from_url(
+            url=model.default_cfg["url"], map_location="cpu", check_hash=True
+        )
+        model.load_state_dict(state_dict)
+    return model
+
+
+@register_model
 def parcnetv2_base(pretrained=False, **kwargs):
     model = MetaFormer(
         depths=[3, 9, 24, 3],
         dims=[96, 192, 384, 576],
         token_mixers=ParC_V2_add,
         mlps=partial(BGU, mlp_ratio=5),
+        **kwargs,
+    )
+    model.default_cfg = default_cfgs["convformer_s18"]
+    if pretrained:
+        state_dict = torch.hub.load_state_dict_from_url(
+            url=model.default_cfg["url"], map_location="cpu", check_hash=True
+        )
+        model.load_state_dict(state_dict)
+    return model
+
+
+@register_model
+def parcnetv2_26_base(pretrained=False, **kwargs):
+    model = MetaFormer(
+        depths=[3, 12, 18, 3],
+        dims=[96, 192, 384, 576],
+        token_mixers=ParC_V2_add,
+        mlps=partial(BGU, mlp_ratio=6),
         **kwargs,
     )
     model.default_cfg = default_cfgs["convformer_s18"]

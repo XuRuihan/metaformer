@@ -9,11 +9,11 @@ crop_size = (512, 512)
 model = dict(
     backbone=dict(
         in_chans=3,
-        depths=[3, 3, 12, 3],
+        depths=[3, 9, 24, 3],
         dims=[64, 128, 320, 512],
-        drop_path_rate=0.1,
+        drop_path_rate=0.3,
         init_cfg=dict(
-            type="Pretrained", checkpoint="pretrained/parcnetv2_tiny.pth.tar"
+            type="Pretrained", checkpoint="pretrained/parcnetv2_small.pth.tar"
         ),
         out_indices=[0, 1, 2, 3],
     ),
@@ -30,7 +30,7 @@ optimizer = dict(
     lr=1e-4,
     betas=(0.9, 0.999),
     weight_decay=0.05,
-    paramwise_cfg={"decay_rate": 0.9, "decay_type": "stage_wise", "num_layers": 6},
+    paramwise_cfg={"decay_rate": 0.9, "decay_type": "stage_wise", "num_layers": 12},
 )
 
 # # AdamW optimizer, no weight decay for position embedding & layer norm in backbone

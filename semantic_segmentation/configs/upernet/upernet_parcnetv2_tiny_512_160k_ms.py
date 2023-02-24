@@ -11,8 +11,10 @@ model = dict(
         in_chans=3,
         depths=[3, 3, 12, 3],
         dims=[64, 128, 320, 512],
-        drop_path_rate=0.4,
-        init_cfg=dict(type='Pretrained', checkpoint='pretrained/parcnetv2_tiny.pth'),
+        drop_path_rate=0.1,
+        init_cfg=dict(
+            type="Pretrained", checkpoint="pretrained/parcnetv2_tiny.pth.tar"
+        ),
         out_indices=[0, 1, 2, 3],
     ),
     decode_head=dict(in_channels=[64, 128, 320, 512], num_classes=150,),
@@ -20,21 +22,31 @@ model = dict(
 )
 
 # ConvNeXt Optimizer
+optimizer = dict(
+    constructor="LRDOptimizerConstructor",
+    _delete_=True,
+    type="AdamW",
+    lr=1e-4,
+    betas=(0.9, 0.999),
+    weight_decay=0.05,
+    paramwise_cfg={"decay_rate": 0.9, "decay_type": "stage_wise", "num_layers": 6},
+)
+
+# # AdamW optimizer, no weight decay for position embedding & layer norm in backbone
 # optimizer = dict(
-#     constructor="LearningRateDecayOptimizerConstructor",
 #     _delete_=True,
 #     type="AdamW",
-#     lr=0.0001,
+#     lr=6e-5,
 #     betas=(0.9, 0.999),
-#     weight_decay=0.05,
-#     paramwise_cfg={"decay_rate": 0.9, "decay_type": "stage_wise", "num_layers": 6},
+#     weight_decay=0.01,
+#     paramwise_cfg=dict(
+#         custom_keys={
+#             "absolute_pos_embed": dict(decay_mult=0.0),
+#             "relative_position_bias_table": dict(decay_mult=0.0),
+#             "norm": dict(decay_mult=0.0),
+#         }
+#     ),
 # )
-
-# AdamW optimizer, no weight decay for position embedding & layer norm in backbone
-optimizer = dict(_delete_=True, type='AdamW', lr=0.00006, betas=(0.9, 0.999), weight_decay=0.01,
-                 paramwise_cfg=dict(custom_keys={'absolute_pos_embed': dict(decay_mult=0.),
-                                                 'relative_position_bias_table': dict(decay_mult=0.),
-                                                 'norm': dict(decay_mult=0.)}))
 
 lr_config = dict(
     _delete_=True,

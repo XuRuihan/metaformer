@@ -8,7 +8,7 @@ model = dict(
         in_chans=3,
         depths=[3, 3, 12, 3],
         dims=[64, 128, 320, 512],
-        drop_path_rate=0.2,
+        drop_path_rate=0.1,
         out_indices=[0, 1, 2, 3],
         norm_cfg=norm_cfg,
     ),

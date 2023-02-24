@@ -20,10 +20,13 @@ Some implementations are modified from timm (https://github.com/rwightman/pytorc
 from functools import partial
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 from timm.models.layers import trunc_normal_, DropPath
 from timm.models.registry import register_model
 from timm.data import IMAGENET_DEFAULT_MEAN, IMAGENET_DEFAULT_STD
 from timm.models.layers.helpers import to_2tuple
+
+# from depthwise_conv2d_implicit_gemm import DepthWiseConv2dImplicitGEMM as Conv2d
 
 
 def _cfg(url="", **kwargs):
@@ -42,20 +45,83 @@ def _cfg(url="", **kwargs):
 
 
 default_cfgs = {
-    "poolformerv2_s12": _cfg(
-        url="https://huggingface.co/sail/dl/resolve/main/poolformerv2/poolformerv2_s12.pth"
+    "convformer_s18": _cfg(
+        url="https://huggingface.co/sail/dl/resolve/main/convformer/convformer_s18.pth"
     ),
-    "poolformerv2_s24": _cfg(
-        url="https://huggingface.co/sail/dl/resolve/main/poolformerv2/poolformerv2_s24.pth"
+    "convformer_s18_384": _cfg(
+        url="https://huggingface.co/sail/dl/resolve/main/convformer/convformer_s18_384.pth",
+        input_size=(3, 384, 384),
     ),
-    "poolformerv2_s36": _cfg(
-        url="https://huggingface.co/sail/dl/resolve/main/poolformerv2/poolformerv2_s36.pth"
+    "convformer_s36": _cfg(
+        url="https://huggingface.co/sail/dl/resolve/main/convformer/convformer_s36.pth"
     ),
-    "poolformerv2_m36": _cfg(
-        url="https://huggingface.co/sail/dl/resolve/main/poolformerv2/poolformerv2_m36.pth"
+    "convformer_s36_384": _cfg(
+        url="https://huggingface.co/sail/dl/resolve/main/convformer/convformer_s36_384.pth",
+        input_size=(3, 384, 384),
     ),
-    "poolformerv2_m48": _cfg(
-        url="https://huggingface.co/sail/dl/resolve/main/poolformerv2/poolformerv2_m48.pth"
+    "convformer_m36": _cfg(
+        url="https://huggingface.co/sail/dl/resolve/main/convformer/convformer_m36.pth"
+    ),
+    "convformer_m36_384": _cfg(
+        url="https://huggingface.co/sail/dl/resolve/main/convformer/convformer_m36_384.pth",
+        input_size=(3, 384, 384),
+    ),
+    "convformer_b36": _cfg(
+        url="https://huggingface.co/sail/dl/resolve/main/convformer/convformer_b36.pth"
+    ),
+    "convformer_b36_384": _cfg(
+        url="https://huggingface.co/sail/dl/resolve/main/convformer/convformer_b36_384.pth",
+        input_size=(3, 384, 384),
+    ),
+    "convformer_b36_in21ft1k": _cfg(
+        url="https://huggingface.co/sail/dl/resolve/main/convformer/convformer_b36_in21ft1k.pth"
+    ),
+    "convformer_b36_384_in21ft1k": _cfg(
+        url="https://huggingface.co/sail/dl/resolve/main/convformer/convformer_b36_384_in21ft1k.pth",
+        input_size=(3, 384, 384),
+    ),
+    "convformer_b36_in21k": _cfg(
+        url="https://huggingface.co/sail/dl/resolve/main/convformer/convformer_b36_in21k.pth",
+        num_classes=21841,
+    ),
+    "caformer_s18": _cfg(
+        url="https://huggingface.co/sail/dl/resolve/main/caformer/caformer_s18.pth"
+    ),
+    "caformer_s18_384": _cfg(
+        url="https://huggingface.co/sail/dl/resolve/main/caformer/caformer_s18_384.pth",
+        input_size=(3, 384, 384),
+    ),
+    "caformer_s36": _cfg(
+        url="https://huggingface.co/sail/dl/resolve/main/caformer/caformer_s36.pth"
+    ),
+    "caformer_s36_384": _cfg(
+        url="https://huggingface.co/sail/dl/resolve/main/caformer/caformer_s36_384.pth",
+        input_size=(3, 384, 384),
+    ),
+    "caformer_m36": _cfg(
+        url="https://huggingface.co/sail/dl/resolve/main/caformer/caformer_m36.pth"
+    ),
+    "caformer_m36_384": _cfg(
+        url="https://huggingface.co/sail/dl/resolve/main/caformer/caformer_m36_384.pth",
+        input_size=(3, 384, 384),
+    ),
+    "caformer_b36": _cfg(
+        url="https://huggingface.co/sail/dl/resolve/main/caformer/caformer_b36.pth"
+    ),
+    "caformer_b36_384": _cfg(
+        url="https://huggingface.co/sail/dl/resolve/main/caformer/caformer_b36_384.pth",
+        input_size=(3, 384, 384),
+    ),
+    "caformer_b36_in21ft1k": _cfg(
+        url="https://huggingface.co/sail/dl/resolve/main/caformer/caformer_b36_in21ft1k.pth"
+    ),
+    "caformer_b36_384_in21ft1k": _cfg(
+        url="https://huggingface.co/sail/dl/resolve/main/caformer/caformer_b36_384_in21ft1k.pth",
+        input_size=(3, 384, 384),
+    ),
+    "caformer_b36_in21k": _cfg(
+        url="https://huggingface.co/sail/dl/resolve/main/caformer/caformer_b36_in21k.pth",
+        num_classes=21841,
     ),
 }
 
@@ -72,6 +138,7 @@ class Downsampling(nn.Module):
         kernel_size,
         stride=1,
         padding=0,
+        groups=1,
         pre_norm=None,
         post_norm=None,
         pre_permute=False,
@@ -85,6 +152,7 @@ class Downsampling(nn.Module):
             kernel_size=kernel_size,
             stride=stride,
             padding=padding,
+            groups=groups,
         )
         self.post_norm = post_norm(out_channels) if post_norm else nn.Identity()
 
@@ -110,50 +178,6 @@ class Scale(nn.Module):
 
     def forward(self, x):
         return x * self.scale
-
-
-class SquaredReLU(nn.Module):
-    """
-    Squared ReLU: https://arxiv.org/abs/2109.08668
-    """
-
-    def __init__(self, inplace=False):
-        super().__init__()
-        self.relu = nn.ReLU(inplace=inplace)
-
-    def forward(self, x):
-        return torch.square(self.relu(x))
-
-
-class StarReLU(nn.Module):
-    """
-    StarReLU: s * relu(x + b1) ** 2 + b2
-    """
-
-    def __init__(
-        self,
-        weight_init=1.0,
-        bias_init=0.0,
-        scale_learnable=True,
-        bias_learnable=True,
-        inplace=False,
-    ):
-        super().__init__()
-        self.inplace = inplace
-        self.relu = nn.ReLU(inplace=inplace)
-        self.scale = nn.Parameter(
-            weight_init * torch.ones(1), requires_grad=scale_learnable
-        )
-        # self.pre_bias = nn.Parameter(
-        #     bias_init * torch.ones(1), requires_grad=bias_learnable
-        # )
-        self.post_bias = nn.Parameter(
-            bias_init * torch.ones(1), requires_grad=bias_learnable
-        )
-
-    def forward(self, x):
-        # return self.scale * (self.relu(x) + self.pre_bias) ** 2 + self.post_bias
-        return self.scale * (self.relu(x)) ** 2 + self.post_bias
 
 
 class PGELU(nn.Module):
@@ -224,7 +248,7 @@ class PGELU(nn.Module):
     ) -> None:
         factory_kwargs = {"device": device, "dtype": dtype}
         self.num_parameters = num_parameters
-        super(PGELU, self).__init__()
+        super().__init__()
         self.gelu = nn.GELU()
         self.weight_1 = nn.Parameter(
             torch.empty(num_parameters, **factory_kwargs).fill_(weight_init),
@@ -235,7 +259,8 @@ class PGELU(nn.Module):
             requires_grad=weight_learnable,
         )
         # self.bias = nn.Parameter(
-        #     torch.empty(num_parameters, **factory_kwargs).fill_(bias_init), requires_grad=bias_learnable
+        #     torch.empty(num_parameters, **factory_kwargs).fill_(bias_init),
+        #     requires_grad=bias_learnable,
         # )
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
@@ -249,6 +274,246 @@ class PGELU(nn.Module):
 
     def extra_repr(self) -> str:
         return "num_parameters={}".format(self.num_parameters)
+
+
+# class OversizeConv2d(nn.Module):
+#     def __init__(self, dim, kernel_size, bias=False, interpolate=False):
+#         super().__init__()
+
+#         if interpolate is True:
+#             padding = 0
+#         elif interpolate is False or interpolate is None:
+#             assert kernel_size % 2 == 1
+#             padding = kernel_size // 2
+#         else:
+#             print("interpolate:", interpolate)
+#             assert interpolate % 2 == 1
+#             padding = interpolate // 2
+#             interpolate = to_2tuple(interpolate)
+
+#         self.conv_h = nn.Conv2d(
+#             dim, dim, (kernel_size, 1), padding=(padding, 0), groups=dim, bias=bias
+#         )
+#         self.conv_w = nn.Conv2d(
+#             dim, dim, (1, kernel_size), padding=(0, padding), groups=dim, bias=bias
+#         )
+
+#         self.dim = dim
+#         self.kernel_size = kernel_size
+#         self.interpolate = interpolate
+#         self.padding = padding
+
+#     def get_instance_kernel(self, instance_kernel_size):
+#         h_weight = F.interpolate(
+#             self.conv_h.weight,
+#             [instance_kernel_size[0], 1],
+#             mode="bilinear",
+#             align_corners=True,
+#         )
+#         w_weight = F.interpolate(
+#             self.conv_w.weight,
+#             [1, instance_kernel_size[1]],
+#             mode="bilinear",
+#             align_corners=True,
+#         )
+#         return h_weight, w_weight
+
+#     def forward(self, x):
+#         if self.interpolate is True:
+#             H, W = x.shape[-2:]
+#             instance_kernel_size = 2 * H - 1, 2 * W - 1
+#             h_weight, w_weight = self.get_instance_kernel(instance_kernel_size)
+
+#             padding = H - 1, W - 1
+#             x = F.conv2d(
+#                 x, h_weight, self.conv_h.bias, padding=(padding[0], 0), groups=self.dim
+#             )
+#             x = F.conv2d(
+#                 x, w_weight, self.conv_w.bias, padding=(0, padding[1]), groups=self.dim
+#             )
+#         elif isinstance(self.interpolate, tuple):
+#             h_weight, w_weight = self.get_instance_kernel(self.interpolate)
+#             x = F.conv2d(
+#                 x,
+#                 h_weight,
+#                 self.conv_h.bias,
+#                 padding=(self.padding, 0),
+#                 groups=self.dim,
+#             )
+#             x = F.conv2d(
+#                 x,
+#                 w_weight,
+#                 self.conv_w.bias,
+#                 padding=(0, self.padding),
+#                 groups=self.dim,
+#             )
+#         else:
+#             x = self.conv_h(x)
+#             x = self.conv_w(x)
+#         return x
+
+#     def extra_repr(self):
+#         return f"dim={self.dim}, kernel_size={self.kernel_size}"
+
+
+class OversizeConv2d(nn.Module):
+    def __init__(self, dim, kernel_size, bias=False, interpolate=False):
+        super().__init__()
+
+        if interpolate is True:
+            padding = 0
+        elif interpolate is False or interpolate is None:
+            assert kernel_size % 2 == 1
+            padding = kernel_size // 2
+        else:
+            print("interpolate:", interpolate)
+            assert interpolate % 2 == 1
+            padding = interpolate // 2
+            interpolate = to_2tuple(interpolate)
+
+        self.conv_h = nn.Conv2d(
+            dim, dim, (kernel_size, 1), padding=(padding, 0), groups=dim, bias=bias
+        )
+        self.conv_w = nn.Conv2d(
+            dim, dim, (1, kernel_size), padding=(0, padding), groups=dim, bias=bias
+        )
+        # self.conv_h = Conv2d(dim, (kernel_size, 1))
+        # self.conv_w = Conv2d(dim, (1, kernel_size))
+
+        self.dim = dim
+        self.kernel_size = kernel_size
+        self.interpolate = interpolate
+        self.padding = padding
+
+    def forward(self, x):
+        x = self.conv_h(x)
+        x = self.conv_w(x)
+        return x
+
+    def extra_repr(self):
+        return f"dim={self.dim}, kernel_size={self.kernel_size}"
+
+
+# class ParC_V2(nn.Module):
+#     def __init__(
+#         self,
+#         dim,
+#         expansion_ratio=2,
+#         act_layer=nn.GELU,
+#         bias=False,
+#         kernel_size=7,
+#         padding=3,
+#         **kwargs,
+#     ):
+#         super().__init__()
+#         med_channels = int(expansion_ratio * dim)
+#         self.pwconv1 = nn.Linear(dim, med_channels, bias=True)
+#         self.act = act_layer()
+#         self.dwconv = nn.Conv2d(
+#             med_channels // 2,
+#             med_channels // 2,
+#             kernel_size=kernel_size,
+#             padding=padding,
+#             groups=med_channels // 2,
+#             bias=bias,
+#         )  # depthwise conv
+#         self.pwconv2 = nn.Linear(med_channels // 2, dim, bias=bias)
+
+#     def forward(self, x):
+#         x = self.pwconv1(x)
+#         x1, x2 = x.chunk(2, -1)
+#         x2 = self.act(x2)
+#         x2 = x2.permute(0, 3, 1, 2)
+#         x2 = self.dwconv(x2)
+#         x2 = x2.permute(0, 2, 3, 1)
+#         x = x1 * x2
+#         x = self.pwconv2(x)
+#         return x
+
+
+class ParC_V2(nn.Module):
+    """nn.Conv2d is much faster than nn.Linear during back propagation
+    """
+
+    def __init__(
+        self,
+        dim,
+        expansion_ratio=2,
+        # act_layer=nn.GELU,
+        act_layer=PGELU,
+        bias=False,
+        kernel_size=7,
+        padding=3,
+        **kwargs,
+    ):
+        super().__init__()
+        med_channels = int(expansion_ratio * dim)
+        self.pwconv1 = nn.Conv2d(dim, med_channels, 1, bias=True)
+        self.act = act_layer(med_channels // 2)
+        self.dwconv = nn.Conv2d(
+            med_channels // 2,
+            med_channels // 2,
+            kernel_size=kernel_size,
+            padding=padding,
+            groups=med_channels // 2,
+            bias=bias,
+        )  # depthwise conv
+        # self.dwconv = Conv2d(med_channels // 2, kernel_size)
+        self.pwconv2 = nn.Conv2d(med_channels // 2, dim, 1, bias=bias)
+
+    def forward(self, x):
+        x = x.permute(0, 3, 1, 2)
+        x = self.pwconv1(x)
+        x1, x2 = x.chunk(2, 1)
+        x2 = self.act(x2)
+        x2 = self.dwconv(x2)
+        x = x1 * x2
+        x = self.pwconv2(x)
+        x = x.permute(0, 2, 3, 1)
+        return x
+
+
+class ParC_V2_add(nn.Module):
+    def __init__(
+        self,
+        dim,
+        expansion_ratio=2,
+        # act_layer=nn.GELU,
+        act_layer=PGELU,
+        bias=False,
+        kernel_size=7,
+        global_kernel_size=14,
+        padding=3,
+        **kwargs,
+    ):
+        super().__init__()
+        med_channels = int(expansion_ratio * dim)
+        self.pwconv1 = nn.Conv2d(dim, med_channels, 1, bias=True)
+        self.act = act_layer(med_channels // 2)
+        self.dwconv1 = OversizeConv2d(med_channels // 2, global_kernel_size, bias)
+        self.dwconv2 = nn.Conv2d(
+            med_channels // 2,
+            med_channels // 2,
+            kernel_size=kernel_size,
+            padding=padding,
+            groups=med_channels // 2,
+            bias=bias,
+        )  # depthwise conv
+        # self.dwconv2 = Conv2d(med_channels // 2, kernel_size)
+        self.pwconv2 = nn.Conv2d(med_channels // 2, dim, 1, bias=bias)
+
+    def forward(self, x):
+        x = x.permute(0, 3, 1, 2)
+        x = self.pwconv1(x)
+        x1, x2 = x.chunk(2, 1)
+        x2 = x2.permute(0, 2, 3, 1)
+        x2 = self.act(x2)
+        x2 = x2.permute(0, 3, 1, 2)
+        x2 = self.dwconv1(x2) + self.dwconv2(x2)
+        x = x1 * x2
+        x = self.pwconv2(x)
+        x = x.permute(0, 2, 3, 1)
+        return x
 
 
 class LayerNormGeneral(nn.Module):
@@ -307,25 +572,6 @@ class LayerNormGeneral(nn.Module):
         return x
 
 
-class Pooling(nn.Module):
-    """
-    Implementation of pooling for PoolFormer: https://arxiv.org/abs/2111.11418
-    Modfiled for [B, H, W, C] input
-    """
-
-    def __init__(self, pool_size=3, **kwargs):
-        super().__init__()
-        self.pool = nn.AvgPool2d(
-            pool_size, stride=1, padding=pool_size // 2, count_include_pad=False
-        )
-
-    def forward(self, x):
-        y = x.permute(0, 3, 1, 2)
-        y = self.pool(y)
-        y = y.permute(0, 2, 3, 1)
-        return y - x
-
-
 class Mlp(nn.Module):
     """MLP as used in MetaFormer models, eg Transformer, MLP-Mixer, PoolFormer, MetaFormer baslines and related networks.
     Mostly copied from timm.
@@ -336,8 +582,8 @@ class Mlp(nn.Module):
         dim,
         mlp_ratio=4,
         out_features=None,
-        # act_layer=StarReLU,
-        act_layer=nn.GELU,
+        # act_layer=nn.GELU,
+        act_layer=PGELU,
         drop=0.0,
         bias=False,
         **kwargs,
@@ -348,8 +594,8 @@ class Mlp(nn.Module):
         hidden_features = int(mlp_ratio * in_features)
         drop_probs = to_2tuple(drop)
 
-        self.fc1 = nn.Linear(in_features, hidden_features, bias=True)
-        self.act = act_layer()
+        self.fc1 = nn.Linear(in_features, hidden_features, bias=bias)
+        self.act = act_layer(hidden_features)
         self.drop1 = nn.Dropout(drop_probs[0])
         self.fc2 = nn.Linear(hidden_features, out_features, bias=bias)
         self.drop2 = nn.Dropout(drop_probs[1])
@@ -369,81 +615,7 @@ class BGU(nn.Module):
         dim,
         mlp_ratio=4,
         out_features=None,
-        act_layer=PGELU,
-        # act_layer=nn.Sigmoid,
-        drop=0.0,
-        bias=False,
-        **kwargs,
-    ):
-        super().__init__()
-        in_features = dim
-        out_features = out_features or in_features
-        hidden_features = int(mlp_ratio * in_features)
-        drop_probs = to_2tuple(drop)
-
-        self.fc1 = nn.Linear(in_features, hidden_features, bias=True)
-        self.act = act_layer(hidden_features // 2)
-        # self.act = act_layer()
-        self.drop1 = nn.Dropout(drop_probs[0])
-        self.fc2 = nn.Linear(hidden_features // 2, out_features, bias=bias)
-        self.drop2 = nn.Dropout(drop_probs[1])
-
-    def forward(self, x):
-        x = self.fc1(x)
-        x1, x2 = x.chunk(2, -1)
-        x = x1 * self.act(x2)
-        # x = self.act(x1 * x2)
-        x = self.drop1(x)
-        x = self.fc2(x)
-        x = self.drop2(x)
-        return x
-
-
-class BGUv2(nn.Module):
-    def __init__(
-        self,
-        dim,
-        mlp_ratio=4,
-        out_features=None,
-        act_layer=PGELU,
-        drop=0.0,
-        bias=False,
-        **kwargs,
-    ):
-        super().__init__()
-        in_features = dim
-        out_features = out_features or in_features
-        hidden_features = int(mlp_ratio * in_features)
-        drop_probs = to_2tuple(drop)
-
-        self.fc1 = nn.Linear(in_features, hidden_features + out_features, bias=True)
-        self.act = act_layer(hidden_features // 2)
-        self.drop1 = nn.Dropout(drop_probs[0])
-        self.fc2 = nn.Linear(hidden_features // 2, out_features, bias=bias)
-        self.drop2 = nn.Dropout(drop_probs[1])
-
-        self.out_features = out_features
-        self.branch_dim = hidden_features // 2
-
-    def forward(self, x):
-        x = self.fc1(x)
-        x0, x1, x2 = torch.split(
-            x, [self.out_features, self.branch_dim, self.branch_dim], -1
-        )
-        x = x1 * self.act(x2)
-        # x = self.act(x1 * x2)
-        x = self.drop1(x)
-        x = self.fc2(x) + x0
-        x = self.drop2(x)
-        return x
-
-
-class BGUv3(nn.Module):
-    def __init__(
-        self,
-        dim,
-        mlp_ratio=4,
-        out_features=None,
+        # act_layer=nn.GELU,
         act_layer=PGELU,
         drop=0.0,
         bias=False,
@@ -461,87 +633,10 @@ class BGUv3(nn.Module):
         self.fc2 = nn.Linear(hidden_features // 2, out_features, bias=bias)
         self.drop2 = nn.Dropout(drop_probs[1])
 
-        assert in_features == out_features
-        self.scale = nn.Parameter(1 * torch.ones(out_features))
-        self.bias = nn.Parameter(0.0 * torch.ones(out_features))
-
     def forward(self, x):
-        res = x
         x = self.fc1(x)
         x1, x2 = x.chunk(2, -1)
         x = x1 * self.act(x2)
-        # x = self.act(x1 * x2)
-        x = self.drop1(x)
-        x = self.fc2(x) + self.scale * res + self.bias
-        x = self.drop2(x)
-        return x
-
-
-class BGUv4(nn.Module):
-    def __init__(
-        self,
-        dim,
-        mlp_ratio=4,
-        out_features=None,
-        act_layer=PGELU,
-        drop=0.0,
-        bias=False,
-        **kwargs,
-    ):
-        super().__init__()
-        in_features = dim
-        out_features = out_features or in_features
-        hidden_features = int(mlp_ratio * in_features)
-        drop_probs = to_2tuple(drop)
-
-        self.fc1 = nn.Linear(in_features, hidden_features, bias=True)
-        self.act = act_layer(hidden_features)
-        self.drop1 = nn.Dropout(drop_probs[0])
-        self.fc2 = nn.Linear(hidden_features // 2, out_features, bias=bias)
-        self.drop2 = nn.Dropout(drop_probs[1])
-
-    def forward(self, x):
-        x = self.fc1(x)
-        x = self.act(x)
-        x1, x2 = x.chunk(2, -1)
-        x = x1 * x2
-        x = self.drop1(x)
-        x = self.fc2(x)
-        x = self.drop2(x)
-        return x
-
-
-class DQU(nn.Module):
-    def __init__(
-        self,
-        dim,
-        mlp_ratio=4,
-        out_features=None,
-        act1_layer=StarReLU,
-        act2_layer=StarReLU,
-        drop=0.0,
-        bias=False,
-        **kwargs,
-    ):
-        super().__init__()
-        in_features = dim
-        out_features = out_features or in_features
-        hidden_features = int(mlp_ratio * in_features)
-        drop_probs = to_2tuple(drop)
-
-        self.fc1 = nn.Linear(in_features, hidden_features, bias=True)
-        self.act1 = act1_layer()
-        self.drop1 = nn.Dropout(drop_probs[0])
-        self.scale = nn.Parameter(1e-6 * torch.ones(hidden_features // 2))
-        self.fc2 = nn.Linear(hidden_features // 2, out_features, bias=bias)
-        self.act2 = act2_layer()
-        self.drop2 = nn.Dropout(drop_probs[1])
-
-    def forward(self, x):
-        x = self.fc1(x)
-        x = self.act1(x)
-        x1, x2 = x.chunk(2, -1)
-        x = self.act2(x1 + self.scale * x2)
         x = self.drop1(x)
         x = self.fc2(x)
         x = self.drop2(x)
@@ -555,15 +650,15 @@ class MlpHead(nn.Module):
         self,
         dim,
         num_classes=1000,
-        mlp_ratio=4,
-        act_layer=SquaredReLU,
+        mlp_ratio=2,
+        act_layer=nn.GELU,
         norm_layer=nn.LayerNorm,
         head_dropout=0.0,
         bias=True,
     ):
         super().__init__()
         hidden_features = int(mlp_ratio * dim)
-        self.fc1 = nn.Linear(dim, hidden_features, bias=bias)
+        self.fc1 = nn.Linear(dim, hidden_features, bias=True)
         self.act = act_layer()
         self.norm = norm_layer(hidden_features)
         self.fc2 = nn.Linear(hidden_features, num_classes, bias=bias)
@@ -587,6 +682,7 @@ class MetaFormerBlock(nn.Module):
         self,
         dim,
         token_mixer=nn.Identity,
+        global_kernel_size=14,
         mlp=Mlp,
         norm_layer=nn.LayerNorm,
         drop=0.0,
@@ -598,7 +694,9 @@ class MetaFormerBlock(nn.Module):
         super().__init__()
 
         self.norm1 = norm_layer(dim)
-        self.token_mixer = token_mixer(dim=dim, drop=drop)
+        self.token_mixer = token_mixer(
+            dim=dim, drop=drop, global_kernel_size=global_kernel_size
+        )
         self.drop_path1 = DropPath(drop_path) if drop_path > 0.0 else nn.Identity()
         self.layer_scale1 = (
             Scale(dim=dim, init_value=layer_scale_init_value)
@@ -641,6 +739,7 @@ downsamplings for the last 3 stages is a layer of conv with k3, s2 and p1
 DOWNSAMPLE_LAYERS_FOUR_STAGES format: [Downsampling, Downsampling, Downsampling, Downsampling]
 use `partial` to specify some arguments
 """
+# MetaFormer
 DOWNSAMPLE_LAYERS_FOUR_STAGES = (
     [
         partial(
@@ -657,6 +756,30 @@ DOWNSAMPLE_LAYERS_FOUR_STAGES = (
             kernel_size=3,
             stride=2,
             padding=1,
+            pre_norm=partial(LayerNormGeneral, bias=False, eps=1e-6),
+            pre_permute=True,
+        )
+    ]
+    * 3
+)
+# MetaFormer_group4
+DOWNSAMPLE_LAYERS_FOUR_STAGES_GROUP = (
+    [
+        partial(
+            Downsampling,
+            kernel_size=7,
+            stride=4,
+            padding=2,
+            post_norm=partial(LayerNormGeneral, bias=False, eps=1e-6),
+        )
+    ]
+    + [
+        partial(
+            Downsampling,
+            kernel_size=4,
+            stride=2,
+            padding=1,
+            groups=4,
             pre_norm=partial(LayerNormGeneral, bias=False, eps=1e-6),
             pre_permute=True,
         )
@@ -697,6 +820,7 @@ class MetaFormer(nn.Module):
         dims=[64, 128, 320, 512],
         downsample_layers=DOWNSAMPLE_LAYERS_FOUR_STAGES,
         token_mixers=nn.Identity,
+        global_kernel_sizes=[111, 55, 27, 13],
         mlps=Mlp,
         norm_layers=partial(LayerNormGeneral, eps=1e-6, bias=False),
         drop_path_rate=0.0,
@@ -754,6 +878,7 @@ class MetaFormer(nn.Module):
                     MetaFormerBlock(
                         dim=dims[i],
                         token_mixer=token_mixers[i],
+                        global_kernel_size=global_kernel_sizes[i],
                         mlp=mlps[i],
                         norm_layer=norm_layers[i],
                         drop_path=dp_rates[cur + j],
@@ -798,18 +923,18 @@ class MetaFormer(nn.Module):
 
 
 @register_model
-def poolformerv2_s12(pretrained=False, **kwargs):
+def parcnetv2_s12(pretrained=False, **kwargs):
     model = MetaFormer(
         depths=[2, 2, 6, 2],
-        dims=[64, 128, 320, 512],
-        token_mixers=Pooling,
-        mlps=partial(Mlp, mlp_ratio=3.75),
-        norm_layers=partial(
-            LayerNormGeneral, normalized_dim=(1, 2, 3), eps=1e-6, bias=False
-        ),
+        dims=[64, 128, 384, 672],
+        # dims=[64, 144, 384, 640],
+        downsample_layers=DOWNSAMPLE_LAYERS_FOUR_STAGES_GROUP,
+        token_mixers=ParC_V2,  # _add,
+        mlps=BGU,
+        head_fn=MlpHead,
         **kwargs,
     )
-    model.default_cfg = default_cfgs["poolformerv2_s12"]
+    model.default_cfg = default_cfgs["convformer_s18"]
     if pretrained:
         state_dict = torch.hub.load_state_dict_from_url(
             url=model.default_cfg["url"], map_location="cpu", check_hash=True
@@ -819,18 +944,56 @@ def poolformerv2_s12(pretrained=False, **kwargs):
 
 
 @register_model
-def poolformerv2_bgu_s12(pretrained=False, **kwargs):
+def parcnetv2_e2_s12(pretrained=False, **kwargs):
     model = MetaFormer(
         depths=[2, 2, 6, 2],
+        dims=[96, 192, 448, 672],
+        # dims=[64, 128, 320, 512],
+        downsample_layers=DOWNSAMPLE_LAYERS_FOUR_STAGES_GROUP,
+        token_mixers=ParC_V2,  # _add,
+        mlps=partial(BGU, mlp_ratio=2),
+        head_fn=MlpHead,
+        **kwargs,
+    )
+    model.default_cfg = default_cfgs["convformer_s18"]
+    if pretrained:
+        state_dict = torch.hub.load_state_dict_from_url(
+            url=model.default_cfg["url"], map_location="cpu", check_hash=True
+        )
+        model.load_state_dict(state_dict)
+    return model
+
+
+@register_model
+def parcnetv2_s18(pretrained=False, **kwargs):
+    model = MetaFormer(
+        depths=[3, 3, 9, 3],
+        dims=[64, 128, 384, 672],
+        downsample_layers=DOWNSAMPLE_LAYERS_FOUR_STAGES_GROUP,
+        token_mixers=ParC_V2_add,
+        mlps=BGU,
+        head_fn=MlpHead,
+        **kwargs,
+    )
+    model.default_cfg = default_cfgs["convformer_s18"]
+    if pretrained:
+        state_dict = torch.hub.load_state_dict_from_url(
+            url=model.default_cfg["url"], map_location="cpu", check_hash=True
+        )
+        model.load_state_dict(state_dict)
+    return model
+
+
+@register_model
+def parcnetv2_tiny(pretrained=False, **kwargs):
+    model = MetaFormer(
+        depths=[3, 3, 12, 3],
         dims=[64, 128, 320, 512],
-        token_mixers=Pooling,
+        token_mixers=ParC_V2_add,
         mlps=partial(BGU, mlp_ratio=5),
-        norm_layers=partial(
-            LayerNormGeneral, normalized_dim=(1, 2, 3), eps=1e-6, bias=False
-        ),
         **kwargs,
     )
-    model.default_cfg = default_cfgs["poolformerv2_s12"]
+    model.default_cfg = default_cfgs["convformer_s18"]
     if pretrained:
         state_dict = torch.hub.load_state_dict_from_url(
             url=model.default_cfg["url"], map_location="cpu", check_hash=True
@@ -840,18 +1003,15 @@ def poolformerv2_bgu_s12(pretrained=False, **kwargs):
 
 
 @register_model
-def poolformerv2_bguv2_s12(pretrained=False, **kwargs):
+def parcnetv2_26_tiny(pretrained=False, **kwargs):
     model = MetaFormer(
-        depths=[2, 2, 6, 2],
+        depths=[3, 3, 9, 3],
         dims=[64, 128, 320, 512],
-        token_mixers=Pooling,
-        mlps=BGUv2,
-        norm_layers=partial(
-            LayerNormGeneral, normalized_dim=(1, 2, 3), eps=1e-6, bias=False
-        ),
+        token_mixers=ParC_V2_add,
+        mlps=partial(BGU, mlp_ratio=6),
         **kwargs,
     )
-    model.default_cfg = default_cfgs["poolformerv2_s12"]
+    model.default_cfg = default_cfgs["convformer_s18"]
     if pretrained:
         state_dict = torch.hub.load_state_dict_from_url(
             url=model.default_cfg["url"], map_location="cpu", check_hash=True
@@ -861,18 +1021,15 @@ def poolformerv2_bguv2_s12(pretrained=False, **kwargs):
 
 
 @register_model
-def poolformerv2_bguv3_s12(pretrained=False, **kwargs):
+def parcnetv2_lasthalf_tiny(pretrained=False, **kwargs):
     model = MetaFormer(
-        depths=[2, 2, 6, 2],
+        depths=[3, 3, 12, 3],
         dims=[64, 128, 320, 512],
-        token_mixers=Pooling,
-        mlps=partial(BGUv3, mlp_ratio=5),
-        norm_layers=partial(
-            LayerNormGeneral, normalized_dim=(1, 2, 3), eps=1e-6, bias=False
-        ),
+        token_mixers=[ParC_V2, ParC_V2_add, ParC_V2_add, ParC_V2_add],
+        mlps=partial(BGU, mlp_ratio=5),
         **kwargs,
     )
-    model.default_cfg = default_cfgs["poolformerv2_s12"]
+    model.default_cfg = default_cfgs["convformer_s18"]
     if pretrained:
         state_dict = torch.hub.load_state_dict_from_url(
             url=model.default_cfg["url"], map_location="cpu", check_hash=True
@@ -882,18 +1039,15 @@ def poolformerv2_bguv3_s12(pretrained=False, **kwargs):
 
 
 @register_model
-def poolformerv2_bguv4_s12(pretrained=False, **kwargs):
+def parcnetv2_mlp(pretrained=False, **kwargs):
     model = MetaFormer(
-        depths=[2, 2, 6, 2],
+        depths=[3, 3, 12, 3],
         dims=[64, 128, 320, 512],
-        token_mixers=Pooling,
-        mlps=partial(BGUv4, mlp_ratio=5),
-        norm_layers=partial(
-            LayerNormGeneral, normalized_dim=(1, 2, 3), eps=1e-6, bias=False
-        ),
+        token_mixers=ParC_V2_add,
+        mlps=partial(Mlp, mlp_ratio=3.75),
         **kwargs,
     )
-    model.default_cfg = default_cfgs["poolformerv2_s12"]
+    model.default_cfg = default_cfgs["convformer_s18"]
     if pretrained:
         state_dict = torch.hub.load_state_dict_from_url(
             url=model.default_cfg["url"], map_location="cpu", check_hash=True
@@ -903,18 +1057,15 @@ def poolformerv2_bguv4_s12(pretrained=False, **kwargs):
 
 
 @register_model
-def poolformerv2_dqu_s12(pretrained=False, **kwargs):
+def parcnetv2_small(pretrained=False, **kwargs):
     model = MetaFormer(
-        depths=[2, 2, 6, 2],
+        depths=[3, 9, 24, 3],
         dims=[64, 128, 320, 512],
-        token_mixers=Pooling,
-        mlps=partial(DQU, mlp_ratio=5),
-        norm_layers=partial(
-            LayerNormGeneral, normalized_dim=(1, 2, 3), eps=1e-6, bias=False
-        ),
+        token_mixers=ParC_V2_add,
+        mlps=partial(BGU, mlp_ratio=5),
         **kwargs,
     )
-    model.default_cfg = default_cfgs["poolformerv2_s12"]
+    model.default_cfg = default_cfgs["convformer_s18"]
     if pretrained:
         state_dict = torch.hub.load_state_dict_from_url(
             url=model.default_cfg["url"], map_location="cpu", check_hash=True
@@ -924,17 +1075,15 @@ def poolformerv2_dqu_s12(pretrained=False, **kwargs):
 
 
 @register_model
-def poolformerv2_s24(pretrained=False, **kwargs):
+def parcnetv2_26_small(pretrained=False, **kwargs):
     model = MetaFormer(
-        depths=[4, 4, 12, 4],
+        depths=[3, 12, 18, 3],
         dims=[64, 128, 320, 512],
-        token_mixers=Pooling,
-        norm_layers=partial(
-            LayerNormGeneral, normalized_dim=(1, 2, 3), eps=1e-6, bias=False
-        ),
+        token_mixers=ParC_V2_add,
+        mlps=partial(BGU, mlp_ratio=6),
         **kwargs,
     )
-    model.default_cfg = default_cfgs["poolformerv2_s24"]
+    model.default_cfg = default_cfgs["convformer_s18"]
     if pretrained:
         state_dict = torch.hub.load_state_dict_from_url(
             url=model.default_cfg["url"], map_location="cpu", check_hash=True
@@ -944,17 +1093,15 @@ def poolformerv2_s24(pretrained=False, **kwargs):
 
 
 @register_model
-def poolformerv2_s36(pretrained=False, **kwargs):
+def parcnetv2_base(pretrained=False, **kwargs):
     model = MetaFormer(
-        depths=[6, 6, 18, 6],
-        dims=[64, 128, 320, 512],
-        token_mixers=Pooling,
-        norm_layers=partial(
-            LayerNormGeneral, normalized_dim=(1, 2, 3), eps=1e-6, bias=False
-        ),
+        depths=[3, 9, 24, 3],
+        dims=[96, 192, 384, 576],
+        token_mixers=ParC_V2_add,
+        mlps=partial(BGU, mlp_ratio=5),
         **kwargs,
     )
-    model.default_cfg = default_cfgs["poolformerv2_s36"]
+    model.default_cfg = default_cfgs["convformer_s18"]
     if pretrained:
         state_dict = torch.hub.load_state_dict_from_url(
             url=model.default_cfg["url"], map_location="cpu", check_hash=True
@@ -964,37 +1111,15 @@ def poolformerv2_s36(pretrained=False, **kwargs):
 
 
 @register_model
-def poolformerv2_m36(pretrained=False, **kwargs):
+def parcnetv2_26_base(pretrained=False, **kwargs):
     model = MetaFormer(
-        depths=[6, 6, 18, 6],
-        dims=[96, 192, 384, 768],
-        token_mixers=Pooling,
-        norm_layers=partial(
-            LayerNormGeneral, normalized_dim=(1, 2, 3), eps=1e-6, bias=False
-        ),
+        depths=[3, 12, 18, 3],
+        dims=[96, 192, 384, 576],
+        token_mixers=ParC_V2_add,
+        mlps=partial(BGU, mlp_ratio=6),
         **kwargs,
     )
-    model.default_cfg = default_cfgs["poolformerv2_m36"]
-    if pretrained:
-        state_dict = torch.hub.load_state_dict_from_url(
-            url=model.default_cfg["url"], map_location="cpu", check_hash=True
-        )
-        model.load_state_dict(state_dict)
-    return model
-
-
-@register_model
-def poolformerv2_m48(pretrained=False, **kwargs):
-    model = MetaFormer(
-        depths=[8, 8, 24, 8],
-        dims=[96, 192, 384, 768],
-        token_mixers=Pooling,
-        norm_layers=partial(
-            LayerNormGeneral, normalized_dim=(1, 2, 3), eps=1e-6, bias=False
-        ),
-        **kwargs,
-    )
-    model.default_cfg = default_cfgs["poolformerv2_m48"]
+    model.default_cfg = default_cfgs["convformer_s18"]
     if pretrained:
         state_dict = torch.hub.load_state_dict_from_url(
             url=model.default_cfg["url"], map_location="cpu", check_hash=True
