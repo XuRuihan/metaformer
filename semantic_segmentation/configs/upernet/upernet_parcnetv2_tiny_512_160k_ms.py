@@ -7,14 +7,12 @@ _base_ = [
 crop_size = (512, 512)
 
 model = dict(
+    pretrained="pretrained/parcnetv2_tiny.pth.tar",
     backbone=dict(
         in_chans=3,
         depths=[3, 3, 12, 3],
         dims=[64, 128, 320, 512],
-        drop_path_rate=0.1,
-        init_cfg=dict(
-            type="Pretrained", checkpoint="pretrained/parcnetv2_tiny.pth.tar"
-        ),
+        drop_path_rate=0.3,
         out_indices=[0, 1, 2, 3],
     ),
     decode_head=dict(in_channels=[64, 128, 320, 512], num_classes=150,),

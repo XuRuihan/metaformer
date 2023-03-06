@@ -1,30 +1,14 @@
-# Copyright 2022 Garena Online Private Limited
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#     http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
-
 """
-MetaFormer baselines including IdentityFormer, RandFormer, PoolFormerV2,
-ConvFormer and CAFormer.
+ParCNet-V2: Oversized Convolution with enhanced attention.
 Some implementations are modified from timm (https://github.com/rwightman/pytorch-image-models).
 """
 from functools import partial
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from timm.models.layers import trunc_normal_, DropPath
+from timm.models.layers import trunc_normal_, DropPath, to_2tuple
 from timm.models.registry import register_model
 from timm.data import IMAGENET_DEFAULT_MEAN, IMAGENET_DEFAULT_STD
-from timm.models.layers.helpers import to_2tuple
 
 
 def _cfg(url="", **kwargs):
@@ -80,45 +64,6 @@ default_cfgs = {
     ),
     "convformer_b36_in21k": _cfg(
         url="https://huggingface.co/sail/dl/resolve/main/convformer/convformer_b36_in21k.pth",
-        num_classes=21841,
-    ),
-    "caformer_s18": _cfg(
-        url="https://huggingface.co/sail/dl/resolve/main/caformer/caformer_s18.pth"
-    ),
-    "caformer_s18_384": _cfg(
-        url="https://huggingface.co/sail/dl/resolve/main/caformer/caformer_s18_384.pth",
-        input_size=(3, 384, 384),
-    ),
-    "caformer_s36": _cfg(
-        url="https://huggingface.co/sail/dl/resolve/main/caformer/caformer_s36.pth"
-    ),
-    "caformer_s36_384": _cfg(
-        url="https://huggingface.co/sail/dl/resolve/main/caformer/caformer_s36_384.pth",
-        input_size=(3, 384, 384),
-    ),
-    "caformer_m36": _cfg(
-        url="https://huggingface.co/sail/dl/resolve/main/caformer/caformer_m36.pth"
-    ),
-    "caformer_m36_384": _cfg(
-        url="https://huggingface.co/sail/dl/resolve/main/caformer/caformer_m36_384.pth",
-        input_size=(3, 384, 384),
-    ),
-    "caformer_b36": _cfg(
-        url="https://huggingface.co/sail/dl/resolve/main/caformer/caformer_b36.pth"
-    ),
-    "caformer_b36_384": _cfg(
-        url="https://huggingface.co/sail/dl/resolve/main/caformer/caformer_b36_384.pth",
-        input_size=(3, 384, 384),
-    ),
-    "caformer_b36_in21ft1k": _cfg(
-        url="https://huggingface.co/sail/dl/resolve/main/caformer/caformer_b36_in21ft1k.pth"
-    ),
-    "caformer_b36_384_in21ft1k": _cfg(
-        url="https://huggingface.co/sail/dl/resolve/main/caformer/caformer_b36_384_in21ft1k.pth",
-        input_size=(3, 384, 384),
-    ),
-    "caformer_b36_in21k": _cfg(
-        url="https://huggingface.co/sail/dl/resolve/main/caformer/caformer_b36_in21k.pth",
         num_classes=21841,
     ),
 }
@@ -294,43 +239,6 @@ class OversizeConv2d(nn.Module):
         return f"dim={self.dim}, kernel_size={self.kernel_size}"
 
 
-# class ParC_V2(nn.Module):
-#     def __init__(
-#         self,
-#         dim,
-#         expansion_ratio=2,
-#         act_layer=nn.GELU,
-#         bias=False,
-#         kernel_size=7,
-#         padding=3,
-#         **kwargs,
-#     ):
-#         super().__init__()
-#         med_channels = int(expansion_ratio * dim)
-#         self.pwconv1 = nn.Linear(dim, med_channels, bias=True)
-#         self.act = act_layer()
-#         self.dwconv = nn.Conv2d(
-#             med_channels // 2,
-#             med_channels // 2,
-#             kernel_size=kernel_size,
-#             padding=padding,
-#             groups=med_channels // 2,
-#             bias=bias,
-#         )  # depthwise conv
-#         self.pwconv2 = nn.Linear(med_channels // 2, dim, bias=bias)
-
-#     def forward(self, x):
-#         x = self.pwconv1(x)
-#         x1, x2 = x.chunk(2, -1)
-#         x2 = self.act(x2)
-#         x2 = x2.permute(0, 3, 1, 2)
-#         x2 = self.dwconv(x2)
-#         x2 = x2.permute(0, 2, 3, 1)
-#         x = x1 * x2
-#         x = self.pwconv2(x)
-#         return x
-
-
 class ParC_V2(nn.Module):
     """nn.Conv2d is much faster than nn.Linear during back propagation
     """
@@ -379,7 +287,7 @@ class ParC_V2_add(nn.Module):
         act_layer=nn.GELU,
         bias=False,
         kernel_size=7,
-        global_kernel_size=14,
+        global_kernel_size=13,
         padding=3,
         **kwargs,
     ):
@@ -438,10 +346,6 @@ class LayerNormGeneral(nn.Module):
                 affine_shape=C, normalized_dim=(1, 2, 3), scale=True, bias=True;
             For input shape of (B, C, H, W),
                 affine_shape=(C, 1, 1), normalized_dim=(1, 2, 3), scale=True, bias=True.
-
-        For the several metaformer baslines,
-            IdentityFormer, RandFormer and PoolFormerV2 utilize Modified LayerNorm without bias (bias=False);
-            ConvFormer and CAFormer utilizes LayerNorm without bias (bias=False).
     """
 
     def __init__(
@@ -457,8 +361,9 @@ class LayerNormGeneral(nn.Module):
 
     def forward(self, x):
         c = x - x.mean(self.normalized_dim, keepdim=True)
-        s = c.pow(2).mean(self.normalized_dim, keepdim=True)
-        x = c / torch.sqrt(s + self.eps)
+        x = c / c.norm(2, self.normalized_dim, keepdim=True).clamp_min(self.eps)
+        # s = c.pow(2).mean(self.normalized_dim, keepdim=True)
+        # x = c / torch.sqrt(s + self.eps)
         if self.use_scale:
             x = x * self.weight
         if self.use_bias:
@@ -467,8 +372,7 @@ class LayerNormGeneral(nn.Module):
 
 
 class Mlp(nn.Module):
-    """MLP as used in MetaFormer models, eg Transformer, MLP-Mixer, PoolFormer, MetaFormer baslines and related networks.
-    Mostly copied from timm.
+    """MLP as used in ParCNetV2 models. Mostly copied from timm.
     """
 
     def __init__(
@@ -503,6 +407,9 @@ class Mlp(nn.Module):
 
 
 class BGU(nn.Module):
+    """Bifurcate Gate Unit modified from GLU.
+    """
+
     def __init__(
         self,
         dim,
@@ -565,17 +472,17 @@ class MlpHead(nn.Module):
         return x
 
 
-class MetaFormerBlock(nn.Module):
+class ParCNetV2Block(nn.Module):
     """
-    Implementation of one MetaFormer block.
+    Implementation of one ParCNetV2 block.
     """
 
     def __init__(
         self,
         dim,
         token_mixer=nn.Identity,
-        global_kernel_size=14,
-        mlp=Mlp,
+        global_kernel_size=13,
+        mlp=partial(BGU, mlp_ratio=5),
         norm_layer=nn.LayerNorm,
         drop=0.0,
         drop_path=0.0,
@@ -631,7 +538,7 @@ downsamplings for the last 3 stages is a layer of conv with k3, s2 and p1
 DOWNSAMPLE_LAYERS_FOUR_STAGES format: [Downsampling, Downsampling, Downsampling, Downsampling]
 use `partial` to specify some arguments
 """
-# MetaFormer
+# ParCNetV2
 DOWNSAMPLE_LAYERS_FOUR_STAGES = (
     [
         partial(
@@ -654,7 +561,7 @@ DOWNSAMPLE_LAYERS_FOUR_STAGES = (
     ]
     * 3
 )
-# MetaFormer_group4
+# ParCNetV2_group4
 DOWNSAMPLE_LAYERS_FOUR_STAGES_GROUP = (
     [
         partial(
@@ -680,10 +587,10 @@ DOWNSAMPLE_LAYERS_FOUR_STAGES_GROUP = (
 )
 
 
-class MetaFormer(nn.Module):
-    r"""MetaFormer
-        A PyTorch impl of : `MetaFormer Baselines for Vision`  -
-          https://arxiv.org/abs/2210.13452
+class ParCNetV2(nn.Module):
+    r"""ParCNetV2
+        A PyTorch impl of : `ParCNetV2: Oversized Kernel with Enhanced Attention`  -
+          https://arxiv.org/abs/2211.07157
 
     Args:
         in_chans (int): Number of input image channels. Default: 3.
@@ -691,8 +598,8 @@ class MetaFormer(nn.Module):
         depths (list or tuple): Number of blocks at each stage. Default: [2, 2, 6, 2].
         dims (int): Feature dimension at each stage. Default: [64, 128, 320, 512].
         downsample_layers: (list or tuple): Downsampling layers before each stage.
-        token_mixers (list, tuple or token_fcn): Token mixer for each stage. Default: nn.Identity.
-        mlps (list, tuple or mlp_fcn): Mlp for each stage. Default: Mlp.
+        token_mixers (list, tuple or token_fcn): Token mixer for each stage. Default: ParC_V2_add.
+        mlps (list, tuple or mlp_fcn): Mlp for each stage. Default: partial(BGU, mlp_ratio=5).
         norm_layers (list, tuple or norm_fcn): Norm layers for each stage. Default: partial(LayerNormGeneral, eps=1e-6, bias=False).
         drop_path_rate (float): Stochastic depth rate. Default: 0.
         head_dropout (float): dropout for MLP classifier. Default: 0.
@@ -711,9 +618,9 @@ class MetaFormer(nn.Module):
         depths=[2, 2, 6, 2],
         dims=[64, 128, 320, 512],
         downsample_layers=DOWNSAMPLE_LAYERS_FOUR_STAGES,
-        token_mixers=nn.Identity,
+        token_mixers=ParC_V2_add,
         global_kernel_sizes=[111, 55, 27, 13],
-        mlps=Mlp,
+        mlps=partial(BGU, mlp_ratio=5),
         norm_layers=partial(LayerNormGeneral, eps=1e-6, bias=False),
         drop_path_rate=0.0,
         head_dropout=0.0,
@@ -762,12 +669,12 @@ class MetaFormer(nn.Module):
 
         self.stages = (
             nn.ModuleList()
-        )  # each stage consists of multiple metaformer blocks
+        )  # each stage consists of multiple parcnetv2 blocks
         cur = 0
         for i in range(num_stage):
             stage = nn.Sequential(
                 *[
-                    MetaFormerBlock(
+                    ParCNetV2Block(
                         dim=dims[i],
                         token_mixer=token_mixers[i],
                         global_kernel_size=global_kernel_sizes[i],
@@ -816,7 +723,7 @@ class MetaFormer(nn.Module):
 
 @register_model
 def parcnetv2_s12(pretrained=False, **kwargs):
-    model = MetaFormer(
+    model = ParCNetV2(
         depths=[2, 2, 6, 2],
         dims=[64, 128, 384, 672],
         # dims=[64, 144, 384, 640],
@@ -837,7 +744,7 @@ def parcnetv2_s12(pretrained=False, **kwargs):
 
 @register_model
 def parcnetv2_e2_s12(pretrained=False, **kwargs):
-    model = MetaFormer(
+    model = ParCNetV2(
         depths=[2, 2, 6, 2],
         dims=[96, 192, 448, 672],
         # dims=[64, 128, 320, 512],
@@ -858,7 +765,7 @@ def parcnetv2_e2_s12(pretrained=False, **kwargs):
 
 @register_model
 def parcnetv2_s18(pretrained=False, **kwargs):
-    model = MetaFormer(
+    model = ParCNetV2(
         depths=[3, 3, 9, 3],
         dims=[64, 128, 384, 672],
         downsample_layers=DOWNSAMPLE_LAYERS_FOUR_STAGES_GROUP,
@@ -877,8 +784,27 @@ def parcnetv2_s18(pretrained=False, **kwargs):
 
 
 @register_model
+def parcnetv2_xt(pretrained=False, **kwargs):
+    model = ParCNetV2(
+        depths=[3, 3, 9, 2],
+        dims=[48, 96, 192, 320],
+        downsample_layers=DOWNSAMPLE_LAYERS_FOUR_STAGES_GROUP,
+        token_mixers=ParC_V2_add,
+        mlps=partial(BGU, mlp_ratio=5),
+        **kwargs,
+    )
+    model.default_cfg = default_cfgs["convformer_s18"]
+    if pretrained:
+        state_dict = torch.hub.load_state_dict_from_url(
+            url=model.default_cfg["url"], map_location="cpu", check_hash=True
+        )
+        model.load_state_dict(state_dict)
+    return model
+
+
+@register_model
 def parcnetv2_tiny(pretrained=False, **kwargs):
-    model = MetaFormer(
+    model = ParCNetV2(
         depths=[3, 3, 12, 3],
         dims=[64, 128, 320, 512],
         token_mixers=ParC_V2_add,
@@ -896,7 +822,7 @@ def parcnetv2_tiny(pretrained=False, **kwargs):
 
 @register_model
 def parcnetv2_26_tiny(pretrained=False, **kwargs):
-    model = MetaFormer(
+    model = ParCNetV2(
         depths=[3, 3, 9, 3],
         dims=[64, 128, 320, 512],
         token_mixers=ParC_V2_add,
@@ -914,7 +840,7 @@ def parcnetv2_26_tiny(pretrained=False, **kwargs):
 
 @register_model
 def parcnetv2_lasthalf_tiny(pretrained=False, **kwargs):
-    model = MetaFormer(
+    model = ParCNetV2(
         depths=[3, 3, 12, 3],
         dims=[64, 128, 320, 512],
         token_mixers=[ParC_V2, ParC_V2_add, ParC_V2_add, ParC_V2_add],
@@ -932,7 +858,7 @@ def parcnetv2_lasthalf_tiny(pretrained=False, **kwargs):
 
 @register_model
 def parcnetv2_mlp(pretrained=False, **kwargs):
-    model = MetaFormer(
+    model = ParCNetV2(
         depths=[3, 3, 12, 3],
         dims=[64, 128, 320, 512],
         token_mixers=ParC_V2_add,
@@ -950,7 +876,7 @@ def parcnetv2_mlp(pretrained=False, **kwargs):
 
 @register_model
 def parcnetv2_small(pretrained=False, **kwargs):
-    model = MetaFormer(
+    model = ParCNetV2(
         depths=[3, 9, 24, 3],
         dims=[64, 128, 320, 512],
         token_mixers=ParC_V2_add,
@@ -968,7 +894,7 @@ def parcnetv2_small(pretrained=False, **kwargs):
 
 @register_model
 def parcnetv2_26_small(pretrained=False, **kwargs):
-    model = MetaFormer(
+    model = ParCNetV2(
         depths=[3, 12, 18, 3],
         dims=[64, 128, 320, 512],
         token_mixers=ParC_V2_add,
@@ -986,7 +912,7 @@ def parcnetv2_26_small(pretrained=False, **kwargs):
 
 @register_model
 def parcnetv2_base(pretrained=False, **kwargs):
-    model = MetaFormer(
+    model = ParCNetV2(
         depths=[3, 9, 24, 3],
         dims=[96, 192, 384, 576],
         token_mixers=ParC_V2_add,
@@ -1004,7 +930,7 @@ def parcnetv2_base(pretrained=False, **kwargs):
 
 @register_model
 def parcnetv2_26_base(pretrained=False, **kwargs):
-    model = MetaFormer(
+    model = ParCNetV2(
         depths=[3, 12, 18, 3],
         dims=[96, 192, 384, 576],
         token_mixers=ParC_V2_add,

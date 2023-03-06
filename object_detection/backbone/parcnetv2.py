@@ -6,13 +6,14 @@ from functools import partial
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from timm.models.layers import trunc_normal_, DropPath
+from timm.models.layers import trunc_normal_, DropPath, to_2tuple
 from timm.models.registry import register_model
-from timm.models.layers.helpers import to_2tuple
 
-from mmseg.models.builder import BACKBONES
+from mmdet.models.builder import BACKBONES
+from mmdet.utils import get_root_logger
 from mmcv.cnn import build_norm_layer
 from mmcv.runner import BaseModule
+from mmcv_custom import load_checkpoint
 
 
 class Downsampling(nn.Module):
@@ -67,6 +68,19 @@ class Scale(nn.Module):
 
     def forward(self, x):
         return x * self.scale
+
+
+class StarGELU(nn.Module):
+    def __init__(
+        self, weight_init=1.0, bias_init=0.0, bias_learnable=True, inplace=False,
+    ):
+        super().__init__()
+        self.inplace = inplace
+        self.gelu = nn.GELU()
+        self.bias = nn.Parameter(torch.zeros(1), requires_grad=bias_learnable)
+
+    def forward(self, x):
+        return self.gelu(x) + self.bias
 
 
 # class OversizeConv2d(nn.Module):
@@ -193,7 +207,7 @@ class ParC_V2(nn.Module):
         self,
         dim,
         expansion_ratio=2,
-        act_layer=nn.GELU,
+        act_layer=StarGELU,  # nn.GELU,
         bias=False,
         kernel_size=7,
         padding=3,
@@ -230,10 +244,10 @@ class ParC_V2_add(nn.Module):
         self,
         dim,
         expansion_ratio=2,
-        act_layer=nn.GELU,
+        act_layer=StarGELU,  # nn.GELU,
         bias=False,
         kernel_size=7,
-        global_kernel_size=14,
+        global_kernel_size=13,
         padding=3,
         **kwargs,
     ):
@@ -307,6 +321,7 @@ class LayerNormGeneral(nn.Module):
 
     def forward(self, x):
         c = x - x.mean(self.normalized_dim, keepdim=True)
+        # x = c / c.norm(2, self.normalized_dim, keepdim=True).clamp_min(self.eps)
         s = c.pow(2).mean(self.normalized_dim, keepdim=True)
         x = c / torch.sqrt(s + self.eps)
         if self.use_scale:
@@ -325,7 +340,7 @@ class BGU(nn.Module):
         dim,
         mlp_ratio=4,
         out_features=None,
-        act_layer=nn.GELU,
+        act_layer=StarGELU,  # nn.GELU,
         drop=0.0,
         bias=False,
         **kwargs,
@@ -361,7 +376,7 @@ class ParCNetV2Block(nn.Module):
         self,
         dim,
         token_mixer=nn.Identity,
-        global_kernel_size=14,
+        global_kernel_size=13,
         mlp=partial(BGU, mlp_ratio=5),
         norm_layer=nn.LayerNorm,
         drop=0.0,
@@ -470,13 +485,15 @@ DOWNSAMPLE_LAYERS_FOUR_STAGES_GROUP = (
 @BACKBONES.register_module()
 class ParCNetV2(BaseModule):
     r"""ParCNetV2
+        A PyTorch impl of : `ParCNetV2: Oversized Kernel with Enhanced Attention`  -
+          https://arxiv.org/abs/2211.07157
 
     Args:
         in_chans (int): Number of input image channels. Default: 3.
         depths (list or tuple): Number of blocks at each stage. Default: [2, 2, 6, 2].
         dims (int): Feature dimension at each stage. Default: [64, 128, 320, 512].
         downsample_layers: (list or tuple): Downsampling layers before each stage.
-        token_mixers (list, tuple or token_fcn): Token mixer for each stage. Default: nn.Identity.
+        token_mixers (list, tuple or token_fcn): Token mixer for each stage. Default: ParC_V2_add.
         mlps (list, tuple or mlp_fcn): Mlp for each stage. Default: partial(BGU, mlp_ratio=5).
         norm_layers (list, tuple or norm_fcn): Norm layers for each stage. Default: partial(LayerNormGeneral, eps=1e-6, bias=False).
         drop_path_rate (float): Stochastic depth rate. Default: 0.
@@ -577,15 +594,27 @@ class ParCNetV2(BaseModule):
             self.stages.append(stage)
             cur += depths[i]
 
-        # self.norm = output_norm(dims[-1])
+        self.out_indices = out_indices
+
+        for i_layer in range(4):
+            layer = norm_layers[i](dims[i_layer])
+            layer_name = f"norm{i_layer}"
+            self.add_module(layer_name, layer)
 
         self.apply(self._init_weights)
 
-        self.out_indices = out_indices
-
     def _init_weights(self, m):
-        if isinstance(m, (nn.Conv2d, nn.Linear)):
+        if isinstance(m, nn.Linear):
             trunc_normal_(m.weight, std=0.02)
+            if m.bias is not None:
+                nn.init.constant_(m.bias, 0)
+        elif isinstance(m, nn.LayerNorm):
+            nn.init.constant_(m.bias, 0)
+            nn.init.constant_(m.weight, 1.0)
+        elif isinstance(m, nn.Conv2d):
+            fan_out = m.kernel_size[0] * m.kernel_size[1] * m.out_channels
+            fan_out //= m.groups
+            trunc_normal_(m.weight, std=(2.0 / fan_out) ** 0.5)
             if m.bias is not None:
                 nn.init.constant_(m.bias, 0)
 
@@ -593,20 +622,15 @@ class ParCNetV2(BaseModule):
     def no_weight_decay(self):
         return {"norm"}
 
-    def init_weights(self):
-        print("init cfg", self.init_cfg)
-        if self.init_cfg is None:
-            for m in self.modules():
-                if isinstance(m, nn.Linear):
-                    trunc_normal_init(m, std=0.02, bias=0.0)
-                elif isinstance(m, nn.LayerNorm):
-                    constant_init(m, val=1.0, bias=0.0)
-                elif isinstance(m, nn.Conv2d):
-                    fan_out = m.kernel_size[0] * m.kernel_size[1] * m.out_channels
-                    fan_out //= m.groups
-                    normal_init(m, mean=0, std=math.sqrt(2.0 / fan_out), bias=0)
+    def init_weights(self, pretrained=None):
+        if isinstance(pretrained, str):
+            self.apply(self._init_weights)
+            logger = get_root_logger()
+            load_checkpoint(self, pretrained, strict=False, logger=logger)
+        elif pretrained is None:
+            self.apply(self._init_weights)
         else:
-            super().init_weights()
+            raise TypeError("pretrained must be a str or None")
 
     def forward_features(self, x):
         outs = []
@@ -614,9 +638,10 @@ class ParCNetV2(BaseModule):
             x = self.downsample_layers[i](x)
             x = self.stages[i](x)
             if i in self.out_indices:
-                # Norm is usually performed on `x` before passing to `outs`
+                norm_layer = getattr(self, f"norm{i}")
+                x_out = norm_layer(x)
                 # (B, H, W, C) -> (B, C, H, W)
-                outs.append(x.permute(0, 3, 1, 2))
+                outs.append(x_out.permute(0, 3, 1, 2))
         return tuple(outs)
 
     def forward(self, x):

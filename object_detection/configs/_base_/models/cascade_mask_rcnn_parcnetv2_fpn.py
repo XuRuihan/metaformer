@@ -12,7 +12,7 @@ model = dict(
     ),
     neck=dict(
         type='FPN',
-        in_channels=[128, 256, 512, 1024],
+        in_channels=[64, 128, 320, 512],
         out_channels=256,
         num_outs=5),
     rpn_head=dict(

@@ -337,7 +337,7 @@ class ParC_V3_add(nn.Module):
         act2_layer=StarReLU,
         bias=False,
         kernel_size=7,
-        global_kernel_size=14,
+        global_kernel_size=13,
         padding=3,
         **kwargs,
     ):
@@ -537,7 +537,7 @@ class MetaFormerBlock(nn.Module):
         self,
         dim,
         token_mixer=nn.Identity,
-        global_kernel_size=14,
+        global_kernel_size=13,
         mlp=Mlp,
         norm_layer=nn.LayerNorm,
         drop=0.0,

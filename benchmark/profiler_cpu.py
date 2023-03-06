@@ -9,7 +9,10 @@ import sys
 sys.path.extend([".", ".."])
 
 from models.parcnet_v3_bgu import parcnet_v3_bgu_s18
-from models.parcnetv2 import parcnetv2_tiny
+from models.parcnetv2 import parcnetv2_tiny, parcnetv2_small, parcnetv2_base
+from models.conv2former import conv2former_tiny
+from models.swin import swin_tiny
+from models.convnext import convnext_tiny
 from models.hornet import hornet_tiny_7x7
 
 
