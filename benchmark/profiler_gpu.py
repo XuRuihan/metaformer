@@ -8,7 +8,7 @@ import sys
 
 sys.path.extend([".", ".."])
 
-from models.parcnet_v3_bgu import parcnet_v3_bgu_s18
+from models.parcnetv2_5_bgu import parcnetv2_5_bgu_s18
 from models.parcnetv2 import (
     parcnetv2_s12,
     parcnetv2_e2_s12,

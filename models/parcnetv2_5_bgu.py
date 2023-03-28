@@ -136,6 +136,7 @@ class Downsampling(nn.Module):
         kernel_size,
         stride=1,
         padding=0,
+        groups=1,
         pre_norm=None,
         post_norm=None,
         pre_permute=False,
@@ -149,6 +150,7 @@ class Downsampling(nn.Module):
             kernel_size=kernel_size,
             stride=stride,
             padding=padding,
+            groups=groups,
         )
         self.post_norm = post_norm(out_channels) if post_norm else nn.Identity()
 
@@ -174,19 +176,6 @@ class Scale(nn.Module):
 
     def forward(self, x):
         return x * self.scale
-
-
-class SquaredReLU(nn.Module):
-    """
-    Squared ReLU: https://arxiv.org/abs/2109.08668
-    """
-
-    def __init__(self, inplace=False):
-        super().__init__()
-        self.relu = nn.ReLU(inplace=inplace)
-
-    def forward(self, x):
-        return torch.square(self.relu(x))
 
 
 class StarReLU(nn.Module):
@@ -351,11 +340,6 @@ class OversizeConv2d(nn.Module):
 
 
 class ParC_V3(nn.Module):
-    """ParC_V3 (without oversize convolution)
-
-    `nn.Linear` (67ms) version is faster than the `nn.Conv2d` version (77ms)
-    """
-
     def __init__(
         self,
         dim,
@@ -382,7 +366,6 @@ class ParC_V3(nn.Module):
 
     def forward(self, x):
         x = self.pwconv1(x)
-        # x = self.act(x)
         x1, x2 = x.chunk(2, -1)
         x2 = self.act(x2)
         x = torch.cat([x1, x2], -1)
@@ -396,11 +379,6 @@ class ParC_V3(nn.Module):
 
 
 class ParC_V3_add(nn.Module):
-    """ParC_V3 (7x7 add oversize convolution)
-
-    `nn.Conv2d` (141ms) version is faster than the `nn.Linear` version (184ms)
-    """
-
     def __init__(
         self,
         dim,
@@ -443,11 +421,6 @@ class ParC_V3_add(nn.Module):
 
 
 class ParC_V3_cat(nn.Module):
-    """ParC_V3 (7x7 cat oversize convolution)
-
-    bad performance. (< 7x7)
-    """
-
     def __init__(
         self,
         dim,
@@ -625,6 +598,40 @@ class Mlp(nn.Module):
         return x
 
 
+class BGU(nn.Module):
+    def __init__(
+        self,
+        dim,
+        mlp_ratio=4,
+        out_features=None,
+        act_layer=nn.GELU,
+        drop=0.0,
+        bias=False,
+        **kwargs,
+    ):
+        super().__init__()
+        in_features = dim
+        out_features = out_features or in_features
+        hidden_features = int(mlp_ratio * in_features)
+        drop_probs = to_2tuple(drop)
+
+        self.fc1 = nn.Linear(in_features, hidden_features, bias=bias)
+        self.act = act_layer()
+        self.drop1 = nn.Dropout(drop_probs[0])
+        self.fc2 = nn.Linear(hidden_features // 2, out_features, bias=bias)
+        self.drop2 = nn.Dropout(drop_probs[1])
+
+    def forward(self, x):
+        x = self.fc1(x)
+        x1, x2 = x.chunk(2, -1)
+        x = x1 * self.act(x2)
+        # x = self.act(x1 * x2)
+        x = self.drop1(x)
+        x = self.fc2(x)
+        x = self.drop2(x)
+        return x
+
+
 class MlpHead(nn.Module):
     """MLP classification head"""
 
@@ -632,7 +639,7 @@ class MlpHead(nn.Module):
         self,
         dim,
         num_classes=1000,
-        mlp_ratio=4,
+        mlp_ratio=2,
         act_layer=nn.GELU,
         norm_layer=nn.LayerNorm,
         head_dropout=0.0,
@@ -721,6 +728,7 @@ downsamplings for the last 3 stages is a layer of conv with k3, s2 and p1
 DOWNSAMPLE_LAYERS_FOUR_STAGES format: [Downsampling, Downsampling, Downsampling, Downsampling]
 use `partial` to specify some arguments
 """
+# MetaFormer
 DOWNSAMPLE_LAYERS_FOUR_STAGES = (
     [
         partial(
@@ -737,6 +745,30 @@ DOWNSAMPLE_LAYERS_FOUR_STAGES = (
             kernel_size=3,
             stride=2,
             padding=1,
+            pre_norm=partial(LayerNormGeneral, bias=False, eps=1e-6),
+            pre_permute=True,
+        )
+    ]
+    * 3
+)
+# MetaFormer_group4
+DOWNSAMPLE_LAYERS_FOUR_STAGES_GROUP = (
+    [
+        partial(
+            Downsampling,
+            kernel_size=7,
+            stride=4,
+            padding=2,
+            post_norm=partial(LayerNormGeneral, bias=False, eps=1e-6),
+        )
+    ]
+    + [
+        partial(
+            Downsampling,
+            kernel_size=4,
+            stride=2,
+            padding=1,
+            groups=4,
             pre_norm=partial(LayerNormGeneral, bias=False, eps=1e-6),
             pre_permute=True,
         )
@@ -880,11 +912,14 @@ class MetaFormer(nn.Module):
 
 
 @register_model
-def convformer_s12(pretrained=False, **kwargs):
+def parcnetv2_5_bgu4_s12(pretrained=False, **kwargs):
     model = MetaFormer(
         depths=[2, 2, 6, 2],
-        dims=[64, 128, 320, 512],
-        token_mixers=SepConv,
+        dims=[64, 128, 384, 672],
+        # dims=[64, 144, 384, 640],
+        downsample_layers=DOWNSAMPLE_LAYERS_FOUR_STAGES_GROUP,
+        token_mixers=ParC_V3,  # _add,
+        mlps=BGU,
         head_fn=MlpHead,
         **kwargs,
     )
@@ -898,11 +933,14 @@ def convformer_s12(pretrained=False, **kwargs):
 
 
 @register_model
-def parcnet_v3_s12(pretrained=False, **kwargs):
+def parcnetv2_5_bgu_s12(pretrained=False, **kwargs):
     model = MetaFormer(
         depths=[2, 2, 6, 2],
-        dims=[64, 128, 320, 512],
-        token_mixers=ParC_V3_add,
+        dims=[96, 192, 448, 672],
+        # dims=[64, 128, 320, 512],
+        downsample_layers=DOWNSAMPLE_LAYERS_FOUR_STAGES_GROUP,
+        token_mixers=ParC_V3,  # _add,
+        mlps=partial(BGU, mlp_ratio=2),
         head_fn=MlpHead,
         **kwargs,
     )
@@ -916,11 +954,35 @@ def parcnet_v3_s12(pretrained=False, **kwargs):
 
 
 @register_model
-def parcnet_v3_s18(pretrained=False, **kwargs):
+def parcnetv2_5_bgu4_s18(pretrained=False, **kwargs):
     model = MetaFormer(
         depths=[3, 3, 9, 3],
-        dims=[64, 128, 320, 512],
-        token_mixers=ParC_V3_add,
+        dims=[64, 128, 384, 672],
+        downsample_layers=DOWNSAMPLE_LAYERS_FOUR_STAGES_GROUP,
+        token_mixers=ParC_V3,  # _add,
+        mlps=BGU,
+        head_fn=MlpHead,
+        **kwargs,
+    )
+    model.default_cfg = default_cfgs["convformer_s18"]
+    if pretrained:
+        state_dict = torch.hub.load_state_dict_from_url(
+            url=model.default_cfg["url"], map_location="cpu", check_hash=True
+        )
+        model.load_state_dict(state_dict)
+    return model
+
+
+@register_model
+def parcnetv2_5_bgu_s18(pretrained=False, **kwargs):
+    model = MetaFormer(
+        depths=[3, 3, 9, 3],
+        dims=[96, 192, 448, 672],
+        # depths=[3, 3, 12, 3],
+        # dims=[80, 160, 432, 640],
+        downsample_layers=DOWNSAMPLE_LAYERS_FOUR_STAGES_GROUP,
+        token_mixers=ParC_V3,  # _add,
+        mlps=partial(BGU, mlp_ratio=2),
         head_fn=MlpHead,
         **kwargs,
     )

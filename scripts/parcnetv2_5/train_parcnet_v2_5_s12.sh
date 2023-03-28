@@ -12,7 +12,7 @@ cd $CODE_PATH && CUDA_VISIBLE_DEVICES=0,1,2,3 python3 -m torch.distributed.launc
 --nproc_per_node=$NUM_GPU \
 --master_port=$MASTER_PORT \
 train.py $DATA_PATH \
---model parcnet_v3_s12 --opt adamw --lr 4e-3 --warmup-epochs 20 \
+--model parcnetv2_5_s12 --opt adamw --lr 4e-3 --warmup-epochs 20 \
 -b $BATCH_SIZE --grad-accum-steps $GRAD_ACCUM_STEPS \
 --drop-path 0.2 --head-dropout 0.0 \
-> log/parcnet_v3_s12.log 2>&1
+> log/parcnetv2_5_s12.log 2>&1

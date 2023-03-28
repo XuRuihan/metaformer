@@ -5,8 +5,8 @@ import sys
 
 sys.path.extend([".", ".."])
 
-from models.parcnet_v3 import parcnet_v3_s12, parcnet_v3_s18
-from models.parcnet_v3_bgu import parcnet_v3_bgu_s18
+from models.parcnetv2_5 import parcnetv2_5_s12, parcnetv2_5_s18
+from models.parcnetv2_5_bgu import parcnetv2_5_bgu_s18
 from models.parcnetv2_speedup import (
     parcnetv2_s12,
     parcnetv2_e2_s12,
@@ -44,9 +44,9 @@ models = {
     # "convnext_xt": convnext_xt().to(device),
     # "convnext_xt_nobottleneck": convnext_xt_nobottleneck().to(device),
     # "conv2former_tiny": conv2former_tiny().to(device),
-    # "parcnet_v3_s12": parcnet_v3_s12().to(device),
-    # "parcnet_v3_s18": parcnet_v3_s18().to(device),
-    # "parcnet_v3_bgu_s18": parcnet_v3_bgu_s18().to(device),
+    # "parcnetv2_5_s12": parcnetv2_5_s12().to(device),
+    # "parcnetv2_5_s18": parcnetv2_5_s18().to(device),
+    # "parcnetv2_5_bgu_s18": parcnetv2_5_bgu_s18().to(device),
     # "parcnetv2_s12": parcnetv2_s12().to(device),
     # "parcnetv2_e2_s12": parcnetv2_e2_s12().to(device),
     # "parcnetv2_s18": parcnetv2_s18().to(device),

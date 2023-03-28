@@ -10,12 +10,12 @@ import sys
 sys.path.extend([".", ".."])
 
 from models import convformer_s18, convformer_s12
-from models.parcnet_v3 import parcnet_v3_s12, parcnet_v3_s18
-from models.parcnet_v3_bgu import (
-    parcnet_v3_bgu_s12,
-    parcnet_v3_bgu4_s12,
-    parcnet_v3_bgu_s18,
-    parcnet_v3_bgu4_s18,
+from models.parcnetv2_5 import parcnetv2_5_s12, parcnetv2_5_s18
+from models.parcnetv2_5_bgu import (
+    parcnetv2_5_bgu_s12,
+    parcnetv2_5_bgu4_s12,
+    parcnetv2_5_bgu_s18,
+    parcnetv2_5_bgu4_s18,
 )
 from models.parcnetv2 import (
     parcnetv2_xt,
@@ -26,6 +26,9 @@ from models.parcnetv2 import (
     parcnetv2_small,
     parcnetv2_26_small,
     parcnetv2_base,
+)
+from models.parcnetv3 import (
+    parcnetv3_xt,
 )
 from models.poolformer_bgu import poolformerv2_bgu_s12
 from models.conv2former import conv2former_tiny
@@ -42,14 +45,15 @@ inputs = torch.rand(1, 3, 224, 224)
 models = {
     # "convformer_s18": convformer_s18(),
     # "convformer_s12": convformer_s12(),
-    # "parcnet_v3_s18": parcnet_v3_s18(),
-    # "parcnet_v3_s12": parcnet_v3_s12(),
-    # "parcnet_v3_bgu_s18": parcnet_v3_bgu_s18(),
-    # "parcnet_v3_bgu4_s18": parcnet_v3_bgu4_s18(),
-    # "parcnet_v3_bgu_s12": parcnet_v3_bgu_s12(),
-    # "parcnet_v3_bgu4_s12": parcnet_v3_bgu4_s12(),
+    # "parcnetv2_5_s18": parcnetv2_5_s18(),
+    # "parcnetv2_5_s12": parcnetv2_5_s12(),
+    # "parcnetv2_5_bgu_s18": parcnetv2_5_bgu_s18(),
+    # "parcnetv2_5_bgu4_s18": parcnetv2_5_bgu4_s18(),
+    # "parcnetv2_5_bgu_s12": parcnetv2_5_bgu_s12(),
+    # "parcnetv2_5_bgu4_s12": parcnetv2_5_bgu4_s12(),
     # "conv2former_tiny": conv2former_tiny(),
     "parcnetv2_xt": parcnetv2_xt(),
+    "parcnetv3_xt": parcnetv3_xt(),
     "parcnetv2_tiny": parcnetv2_tiny(),
     # "parcnetv2_lasthalf_tiny": parcnetv2_lasthalf_tiny(),
     # "parcnetv2_mlp": parcnetv2_mlp(),
