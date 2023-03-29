@@ -180,7 +180,7 @@ class Scale(nn.Module):
 
 class StarReLU(nn.Module):
     """
-    StarReLU: s * relu(x) ** 2 + b
+    StarReLU: s * relu(x + b1) ** 2 + b2
     """
 
     def __init__(
@@ -198,65 +198,15 @@ class StarReLU(nn.Module):
         self.scale = nn.Parameter(
             scale_value * torch.ones(1), requires_grad=scale_learnable
         )
-        self.bias = nn.Parameter(
+        self.pre_bias = nn.Parameter(
+            bias_value * torch.ones(1), requires_grad=bias_learnable
+        )
+        self.post_bias = nn.Parameter(
             bias_value * torch.ones(1), requires_grad=bias_learnable
         )
 
     def forward(self, x):
-        return self.scale * self.relu(x) ** 2 + self.bias
-
-
-class Attention(nn.Module):
-    """
-    Vanilla self-attention from Transformer: https://arxiv.org/abs/1706.03762.
-    Modified from timm.
-    """
-
-    def __init__(
-        self,
-        dim,
-        head_dim=32,
-        num_heads=None,
-        qkv_bias=False,
-        attn_drop=0.0,
-        proj_drop=0.0,
-        proj_bias=False,
-        **kwargs,
-    ):
-        super().__init__()
-
-        self.head_dim = head_dim
-        self.scale = head_dim ** -0.5
-
-        self.num_heads = num_heads if num_heads else dim // head_dim
-        if self.num_heads == 0:
-            self.num_heads = 1
-
-        self.attention_dim = self.num_heads * self.head_dim
-
-        self.qkv = nn.Linear(dim, self.attention_dim * 3, bias=qkv_bias)
-        self.attn_drop = nn.Dropout(attn_drop)
-        self.proj = nn.Linear(self.attention_dim, dim, bias=proj_bias)
-        self.proj_drop = nn.Dropout(proj_drop)
-
-    def forward(self, x):
-        B, H, W, C = x.shape
-        N = H * W
-        qkv = (
-            self.qkv(x)
-            .reshape(B, N, 3, self.num_heads, self.head_dim)
-            .permute(2, 0, 3, 1, 4)
-        )
-        q, k, v = qkv.unbind(0)  # make torchscript happy (cannot use tensor as tuple)
-
-        attn = (q @ k.transpose(-2, -1)) * self.scale
-        attn = attn.softmax(dim=-1)
-        attn = self.attn_drop(attn)
-
-        x = (attn @ v).transpose(1, 2).reshape(B, H, W, self.attention_dim)
-        x = self.proj(x)
-        x = self.proj_drop(x)
-        return x
+        return self.scale * (self.relu(x) + self.pre_bias) ** 2 + self.post_bias
 
 
 class OversizeConv2d(nn.Module):
@@ -344,7 +294,8 @@ class ParC_V3(nn.Module):
         self,
         dim,
         expansion_ratio=2,
-        act_layer=nn.GELU,
+        act1_layer=StarReLU,
+        act2_layer=StarReLU,
         bias=False,
         kernel_size=7,
         padding=3,
@@ -352,8 +303,8 @@ class ParC_V3(nn.Module):
     ):
         super().__init__()
         med_channels = int(expansion_ratio * dim)
-        self.pwconv1 = nn.Linear(dim, med_channels, bias=bias)
-        self.act = act_layer()
+        self.pwconv1 = nn.Linear(dim, med_channels, bias=True)
+        self.act1 = act1_layer()
         self.dwconv = nn.Conv2d(
             med_channels,
             med_channels,
@@ -362,18 +313,17 @@ class ParC_V3(nn.Module):
             groups=med_channels,
             bias=bias,
         )  # depthwise conv
+        self.act2 = act2_layer()
         self.pwconv2 = nn.Linear(med_channels // 2, dim, bias=bias)
 
     def forward(self, x):
         x = self.pwconv1(x)
-        x1, x2 = x.chunk(2, -1)
-        x2 = self.act(x2)
-        x = torch.cat([x1, x2], -1)
+        x = self.act1(x)
         x = x.permute(0, 3, 1, 2)
         x = self.dwconv(x)
         x = x.permute(0, 2, 3, 1)
         x1, x2 = x.chunk(2, -1)
-        x = x1 * x2
+        x = self.act2(x1 + x2)
         x = self.pwconv2(x)
         return x
 
@@ -383,7 +333,8 @@ class ParC_V3_add(nn.Module):
         self,
         dim,
         expansion_ratio=2,
-        act_layer=nn.GELU,
+        act1_layer=StarReLU,
+        act2_layer=StarReLU,
         bias=False,
         kernel_size=7,
         global_kernel_size=13,
@@ -392,8 +343,8 @@ class ParC_V3_add(nn.Module):
     ):
         super().__init__()
         med_channels = int(expansion_ratio * dim)
-        self.pwconv1 = nn.Conv2d(dim, med_channels, 1, bias=bias)
-        self.act = act_layer()
+        self.pwconv1 = nn.Conv2d(dim, med_channels, 1, bias=True)
+        self.act1 = act1_layer()
         self.dwconv1 = OversizeConv2d(med_channels, global_kernel_size, bias)
         self.dwconv2 = nn.Conv2d(
             med_channels,
@@ -403,61 +354,16 @@ class ParC_V3_add(nn.Module):
             groups=med_channels,
             bias=bias,
         )  # depthwise conv
+        self.act2 = act2_layer()
         self.pwconv2 = nn.Conv2d(med_channels // 2, dim, 1, bias=bias)
 
     def forward(self, x):
         x = x.permute(0, 3, 1, 2)
         x = self.pwconv1(x)
-        # x = self.act(x)
-        x1, x2 = x.chunk(2, 1)
-        x2 = self.act(x2)
-        x = torch.cat([x1, x2], 1)
+        x = self.act1(x)
         x = self.dwconv1(x) + self.dwconv2(x)
         x1, x2 = x.chunk(2, 1)
-        x = x1 * x2
-        x = self.pwconv2(x)
-        x = x.permute(0, 2, 3, 1)
-        return x
-
-
-class ParC_V3_cat(nn.Module):
-    def __init__(
-        self,
-        dim,
-        expansion_ratio=2,
-        act_layer=nn.GELU,
-        bias=False,
-        kernel_size=7,
-        global_kernel_size=13,
-        padding=3,
-        **kwargs,
-    ):
-        super().__init__()
-        med_channels = int(expansion_ratio * dim)
-        self.pwconv1 = nn.Conv2d(dim, med_channels, 1, bias=bias)
-        self.act = act_layer()
-        self.dwconv1 = OversizeConv2d(med_channels // 2, global_kernel_size, bias)
-        self.dwconv2 = nn.Conv2d(
-            med_channels // 2,
-            med_channels // 2,
-            kernel_size=kernel_size,
-            padding=padding,
-            groups=med_channels // 2,
-            bias=bias,
-        )  # depthwise conv
-        self.pwconv2 = nn.Conv2d(med_channels // 2, dim, 1, bias=bias)
-
-    def forward(self, x):
-        x = x.permute(0, 3, 1, 2)
-        x = self.pwconv1(x)
-        # x = self.act(x)
-        x1_1, x1_2, x2_1, x2_2 = x.chunk(4, 1)
-        x1_2, x2_2 = self.act(x1_2), self.act(x2_2)
-        x1_1, x1_2 = self.dwconv1(torch.cat([x1_1, x1_2], 1)).chunk(2, 1)
-        x2_1, x2_2 = self.dwconv2(torch.cat([x2_1, x2_2], 1)).chunk(2, 1)
-        x1 = x1_1 * x1_2
-        x2 = x2_1 * x2_2
-        x = torch.cat([x1, x2], 1)
+        x = self.act2(x1 + x2)
         x = self.pwconv2(x)
         x = x.permute(0, 2, 3, 1)
         return x
@@ -519,49 +425,6 @@ class LayerNormGeneral(nn.Module):
         return x
 
 
-class SepConv(nn.Module):
-    r"""
-    Inverted separable convolution from MobileNetV2: https://arxiv.org/abs/1801.04381.
-    """
-
-    def __init__(
-        self,
-        dim,
-        expansion_ratio=2,
-        # expansion_ratio=1.5,
-        act1_layer=nn.GELU,
-        act2_layer=nn.Identity,
-        bias=False,
-        kernel_size=7,
-        padding=3,
-        **kwargs,
-    ):
-        super().__init__()
-        med_channels = int(expansion_ratio * dim)
-        self.pwconv1 = nn.Linear(dim, med_channels, bias=bias)
-        self.act1 = act1_layer()
-        self.dwconv = nn.Conv2d(
-            med_channels,
-            med_channels,
-            kernel_size=kernel_size,
-            padding=padding,
-            groups=med_channels,
-            bias=bias,
-        )  # depthwise conv
-        self.act2 = act2_layer()
-        self.pwconv2 = nn.Linear(med_channels, dim, bias=bias)
-
-    def forward(self, x):
-        x = self.pwconv1(x)
-        x = self.act1(x)
-        x = x.permute(0, 3, 1, 2)
-        x = self.dwconv(x)
-        x = x.permute(0, 2, 3, 1)
-        x = self.act2(x)
-        x = self.pwconv2(x)
-        return x
-
-
 class Mlp(nn.Module):
     """MLP as used in MetaFormer models, eg Transformer, MLP-Mixer, PoolFormer, MetaFormer baslines and related networks.
     Mostly copied from timm.
@@ -598,13 +461,14 @@ class Mlp(nn.Module):
         return x
 
 
-class BGU(nn.Module):
+class DQU(nn.Module):
     def __init__(
         self,
         dim,
         mlp_ratio=4,
         out_features=None,
-        act_layer=nn.GELU,
+        act1_layer=StarReLU,
+        act2_layer=StarReLU,
         drop=0.0,
         bias=False,
         **kwargs,
@@ -615,17 +479,19 @@ class BGU(nn.Module):
         hidden_features = int(mlp_ratio * in_features)
         drop_probs = to_2tuple(drop)
 
-        self.fc1 = nn.Linear(in_features, hidden_features, bias=bias)
-        self.act = act_layer()
+        self.fc1 = nn.Linear(in_features, hidden_features, bias=True)
+        self.act1 = act1_layer()
         self.drop1 = nn.Dropout(drop_probs[0])
+        self.scale = nn.Parameter(1e-6 * torch.ones(hidden_features // 2))
         self.fc2 = nn.Linear(hidden_features // 2, out_features, bias=bias)
+        self.act2 = act2_layer()
         self.drop2 = nn.Dropout(drop_probs[1])
 
     def forward(self, x):
         x = self.fc1(x)
+        x = self.act1(x)
         x1, x2 = x.chunk(2, -1)
-        x = x1 * self.act(x2)
-        # x = self.act(x1 * x2)
+        x = self.act2(x1 + self.scale * x2)
         x = self.drop1(x)
         x = self.fc2(x)
         x = self.drop2(x)
@@ -640,14 +506,14 @@ class MlpHead(nn.Module):
         dim,
         num_classes=1000,
         mlp_ratio=2,
-        act_layer=nn.GELU,
+        act_layer=StarReLU,
         norm_layer=nn.LayerNorm,
         head_dropout=0.0,
         bias=True,
     ):
         super().__init__()
         hidden_features = int(mlp_ratio * dim)
-        self.fc1 = nn.Linear(dim, hidden_features, bias=bias)
+        self.fc1 = nn.Linear(dim, hidden_features, bias=True)
         self.act = act_layer()
         self.norm = norm_layer(hidden_features)
         self.fc2 = nn.Linear(hidden_features, num_classes, bias=bias)
@@ -912,14 +778,14 @@ class MetaFormer(nn.Module):
 
 
 @register_model
-def parcnet_v3_bgu4_s12(pretrained=False, **kwargs):
+def parcnetv2_5_dqu_s12(pretrained=False, **kwargs):
     model = MetaFormer(
         depths=[2, 2, 6, 2],
         dims=[64, 128, 384, 672],
         # dims=[64, 144, 384, 640],
         downsample_layers=DOWNSAMPLE_LAYERS_FOUR_STAGES_GROUP,
         token_mixers=ParC_V3,  # _add,
-        mlps=BGU,
+        mlps=DQU,
         head_fn=MlpHead,
         **kwargs,
     )
@@ -933,14 +799,14 @@ def parcnet_v3_bgu4_s12(pretrained=False, **kwargs):
 
 
 @register_model
-def parcnet_v3_bgu_s12(pretrained=False, **kwargs):
+def parcnetv2_5_dqu2_s12(pretrained=False, **kwargs):
     model = MetaFormer(
         depths=[2, 2, 6, 2],
         dims=[96, 192, 448, 672],
         # dims=[64, 128, 320, 512],
         downsample_layers=DOWNSAMPLE_LAYERS_FOUR_STAGES_GROUP,
         token_mixers=ParC_V3,  # _add,
-        mlps=partial(BGU, mlp_ratio=2),
+        mlps=partial(DQU, mlp_ratio=2),
         head_fn=MlpHead,
         **kwargs,
     )
@@ -954,13 +820,13 @@ def parcnet_v3_bgu_s12(pretrained=False, **kwargs):
 
 
 @register_model
-def parcnet_v3_bgu4_s18(pretrained=False, **kwargs):
+def parcnetv2_5_dqu_s18(pretrained=False, **kwargs):
     model = MetaFormer(
         depths=[3, 3, 9, 3],
         dims=[64, 128, 384, 672],
         downsample_layers=DOWNSAMPLE_LAYERS_FOUR_STAGES_GROUP,
         token_mixers=ParC_V3,  # _add,
-        mlps=BGU,
+        mlps=DQU,
         head_fn=MlpHead,
         **kwargs,
     )
@@ -974,7 +840,7 @@ def parcnet_v3_bgu4_s18(pretrained=False, **kwargs):
 
 
 @register_model
-def parcnet_v3_bgu_s18(pretrained=False, **kwargs):
+def parcnetv2_5_dqu2_s18(pretrained=False, **kwargs):
     model = MetaFormer(
         depths=[3, 3, 9, 3],
         dims=[96, 192, 448, 672],
@@ -982,7 +848,7 @@ def parcnet_v3_bgu_s18(pretrained=False, **kwargs):
         # dims=[80, 160, 432, 640],
         downsample_layers=DOWNSAMPLE_LAYERS_FOUR_STAGES_GROUP,
         token_mixers=ParC_V3,  # _add,
-        mlps=partial(BGU, mlp_ratio=2),
+        mlps=partial(DQU, mlp_ratio=2),
         head_fn=MlpHead,
         **kwargs,
     )

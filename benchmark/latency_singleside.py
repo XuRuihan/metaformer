@@ -72,7 +72,7 @@ def parcnet():
         print(t1.timeit(200))
 
 
-def parcnet_v2():
+def parcnetv2():
     dim = 256
     kernel_size = 63
     image_size = 32
@@ -102,4 +102,4 @@ def parcnet_v2():
 
 if __name__ == "__main__":
     # parcnet()
-    parcnet_v2()
+    parcnetv2()
