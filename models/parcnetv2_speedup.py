@@ -674,6 +674,18 @@ DOWNSAMPLE_LAYERS_FOUR_STAGES_GROUP = (
     ]
     * 3
 )
+# ParCNetV2 isotropic
+DOWNSAMPLE_LAYERS_FOUR_STAGES_ISO = (
+    [
+        partial(
+            Downsampling,
+            kernel_size=16,
+            stride=16,
+            padding=0,
+            post_norm=partial(LayerNormGeneral, bias=False, eps=1e-6),
+        )
+    ]
+)
 
 
 class ParCNetV2(nn.Module):
@@ -742,6 +754,9 @@ class ParCNetV2(nn.Module):
 
         if not isinstance(token_mixers, (list, tuple)):
             token_mixers = [token_mixers] * num_stage
+
+        if not isinstance(global_kernel_sizes, (list, tuple)):
+            global_kernel_sizes = [global_kernel_sizes] * num_stage
 
         if not isinstance(mlps, (list, tuple)):
             mlps = [mlps] * num_stage
@@ -910,11 +925,13 @@ def parcnetv2_tiny(pretrained=False, **kwargs):
 
 
 @register_model
-def parcnetv2_26_tiny(pretrained=False, **kwargs):
+def parcnetv2_iso_tiny(pretrained=False, **kwargs):
     model = ParCNetV2(
-        depths=[3, 3, 9, 3],
-        dims=[64, 128, 320, 512],
+        depths=12,
+        dims=384,
+        downsample_layers=DOWNSAMPLE_LAYERS_FOUR_STAGES_ISO,
         token_mixers=ParC_V2_add,
+        global_kernel_sizes=27,
         mlps=partial(BGU, mlp_ratio=6),
         **kwargs,
     )
@@ -982,11 +999,13 @@ def parcnetv2_small(pretrained=False, **kwargs):
 
 
 @register_model
-def parcnetv2_26_small(pretrained=False, **kwargs):
+def parcnetv2_iso_small(pretrained=False, **kwargs):
     model = ParCNetV2(
-        depths=[3, 12, 18, 3],
-        dims=[64, 128, 320, 512],
+        depths=12,
+        dims=576,
+        downsample_layers=DOWNSAMPLE_LAYERS_FOUR_STAGES_ISO,
         token_mixers=ParC_V2_add,
+        global_kernel_sizes=27,
         mlps=partial(BGU, mlp_ratio=6),
         **kwargs,
     )
@@ -1018,11 +1037,13 @@ def parcnetv2_base(pretrained=False, **kwargs):
 
 
 @register_model
-def parcnetv2_26_base(pretrained=False, **kwargs):
+def parcnetv2_iso_base(pretrained=False, **kwargs):
     model = ParCNetV2(
-        depths=[3, 12, 18, 3],
-        dims=[96, 192, 384, 576],
+        depths=12,
+        dims=768,
+        downsample_layers=DOWNSAMPLE_LAYERS_FOUR_STAGES_ISO,
         token_mixers=ParC_V2_add,
+        global_kernel_sizes=27,
         mlps=partial(BGU, mlp_ratio=6),
         **kwargs,
     )

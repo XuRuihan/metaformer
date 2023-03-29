@@ -11,12 +11,12 @@ from models.parcnetv2_speedup import (
     parcnetv2_s12,
     parcnetv2_e2_s12,
     parcnetv2_s18,
-    parcnetv2_26_tiny,
+    parcnetv2_iso_tiny,
     parcnetv2_tiny,
     parcnetv2_lasthalf_tiny,
     parcnetv2_mlp,
     parcnetv2_small,
-    parcnetv2_26_small,
+    parcnetv2_iso_small,
 )
 from models.poolformer_bgu import poolformerv2_bgu_s12
 from models.conv2former import conv2former_tiny
@@ -52,9 +52,9 @@ models = {
     # "parcnetv2_s18": parcnetv2_s18().to(device),
     "parcnetv2_tiny": parcnetv2_tiny().to(device),
     # "parcnetv2_lasthalf_tiny": parcnetv2_lasthalf_tiny().to(device),
-    # "parcnetv2_26_tiny": parcnetv2_26_tiny().to(device),
+    # "parcnetv2_iso_tiny": parcnetv2_iso_tiny().to(device),
     # "parcnetv2_small": parcnetv2_small().to(device),
-    # "parcnetv2_26_small": parcnetv2_26_small().to(device),
+    # "parcnetv2_iso_small": parcnetv2_iso_small().to(device),
     # "convnext_xt": convnext_xt().to(device),
     "convnext_tiny": convnext_tiny().to(device),
     "convnext_small": convnext_small().to(device),

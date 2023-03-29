@@ -15,6 +15,8 @@ from mmcv.cnn import build_norm_layer
 from mmcv.runner import BaseModule
 from mmcv_custom import load_checkpoint
 
+import warnings
+
 
 class Downsampling(nn.Module):
     """
@@ -207,7 +209,7 @@ class ParC_V2(nn.Module):
         self,
         dim,
         expansion_ratio=2,
-        act_layer=StarGELU,  # nn.GELU,
+        act_layer=nn.GELU,
         bias=False,
         kernel_size=7,
         padding=3,
@@ -244,7 +246,7 @@ class ParC_V2_add(nn.Module):
         self,
         dim,
         expansion_ratio=2,
-        act_layer=StarGELU,  # nn.GELU,
+        act_layer=nn.GELU,
         bias=False,
         kernel_size=7,
         global_kernel_size=13,
@@ -321,9 +323,9 @@ class LayerNormGeneral(nn.Module):
 
     def forward(self, x):
         c = x - x.mean(self.normalized_dim, keepdim=True)
-        # x = c / c.norm(2, self.normalized_dim, keepdim=True).clamp_min(self.eps)
-        s = c.pow(2).mean(self.normalized_dim, keepdim=True)
-        x = c / torch.sqrt(s + self.eps)
+        x = c / c.norm(2, self.normalized_dim, keepdim=True).clamp_min(self.eps)
+        # s = c.pow(2).mean(self.normalized_dim, keepdim=True)
+        # x = c / torch.sqrt(s + self.eps)
         if self.use_scale:
             x = x * self.weight
         if self.use_bias:
@@ -340,7 +342,7 @@ class BGU(nn.Module):
         dim,
         mlp_ratio=4,
         out_features=None,
-        act_layer=StarGELU,  # nn.GELU,
+        act_layer=nn.GELU,
         drop=0.0,
         bias=False,
         **kwargs,
@@ -623,6 +625,8 @@ class ParCNetV2(BaseModule):
         return {"norm"}
 
     def init_weights(self, pretrained=None):
+        if hasattr(self.init_cfg, "checkpoint"):
+            pretrained = pretrained or self.init_cfg["checkpoint"]
         if isinstance(pretrained, str):
             self.apply(self._init_weights)
             logger = get_root_logger()

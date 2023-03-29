@@ -201,6 +201,32 @@ class PGELU(nn.Module):
         return "num_parameters={}".format(self.num_parameters)
 
 
+class FFT(nn.Module):
+    __constants__ = ["num_parameters"]
+    num_parameters: int
+
+    def __init__(self, num_parameters: int = 1, device=None, dtype=None,) -> None:
+        factory_kwargs = {"device": device, "dtype": dtype}
+        self.num_parameters = num_parameters
+        super().__init__()
+        self.gelu = nn.GELU()
+        self.weight_1 = nn.Parameter(torch.ones(num_parameters, **factory_kwargs))
+        self.weight_2 = nn.Parameter(torch.zeros(num_parameters, **factory_kwargs))
+        self.bias = nn.Parameter(torch.zeros(num_parameters, **factory_kwargs))
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return (
+            (self.weight_1 - self.weight_2) * self.gelu(x)
+            + self.weight_2 * x
+            + self.bias
+        )
+
+    def extra_repr(self) -> str:
+        return "num_parameters={}".format(self.num_parameters)
+
+
+
+
 # class OversizeConv2d(nn.Module):
 #     def __init__(self, dim, kernel_size, bias=False, interpolate=False):
 #         super().__init__()
@@ -903,7 +929,7 @@ def parcnetv2_tiny(pretrained=False, **kwargs):
 
 
 @register_model
-def parcnetv2_26_tiny(pretrained=False, **kwargs):
+def parcnetv2_iso_tiny(pretrained=False, **kwargs):
     model = ParCNetV2(
         depths=[3, 3, 9, 3],
         dims=[64, 128, 320, 512],
@@ -975,7 +1001,7 @@ def parcnetv2_small(pretrained=False, **kwargs):
 
 
 @register_model
-def parcnetv2_26_small(pretrained=False, **kwargs):
+def parcnetv2_iso_small(pretrained=False, **kwargs):
     model = ParCNetV2(
         depths=[3, 12, 18, 3],
         dims=[64, 128, 320, 512],
@@ -1011,7 +1037,7 @@ def parcnetv2_base(pretrained=False, **kwargs):
 
 
 @register_model
-def parcnetv2_26_base(pretrained=False, **kwargs):
+def parcnetv2_iso_base(pretrained=False, **kwargs):
     model = ParCNetV2(
         depths=[3, 12, 18, 3],
         dims=[96, 192, 384, 576],

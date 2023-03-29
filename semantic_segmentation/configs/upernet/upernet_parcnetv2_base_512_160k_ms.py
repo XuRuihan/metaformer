@@ -13,6 +13,9 @@ model = dict(
         depths=[3, 9, 24, 3],
         dims=[96, 192, 384, 576],
         drop_path_rate=0.4,
+        init_cfg=dict(
+            type="Pretrained", checkpoint="pretrained/parcnetv2_base.pth.tar"
+        ),
         out_indices=[0, 1, 2, 3],
     ),
     decode_head=dict(in_channels=[96, 192, 384, 576], num_classes=150,),

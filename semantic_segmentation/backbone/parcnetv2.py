@@ -15,6 +15,8 @@ from mmcv.cnn import build_norm_layer
 from mmcv.runner import BaseModule
 from mmcv_custom import load_checkpoint
 
+import warnings
+
 
 class Downsampling(nn.Module):
     """
@@ -321,9 +323,9 @@ class LayerNormGeneral(nn.Module):
 
     def forward(self, x):
         c = x - x.mean(self.normalized_dim, keepdim=True)
-        # x = c / c.norm(2, self.normalized_dim, keepdim=True).clamp_min(self.eps)
-        s = c.pow(2).mean(self.normalized_dim, keepdim=True)
-        x = c / torch.sqrt(s + self.eps)
+        x = c / c.norm(2, self.normalized_dim, keepdim=True).clamp_min(self.eps)
+        # s = c.pow(2).mean(self.normalized_dim, keepdim=True)
+        # x = c / torch.sqrt(s + self.eps)
         if self.use_scale:
             x = x * self.weight
         if self.use_bias:
@@ -623,6 +625,8 @@ class ParCNetV2(BaseModule):
         return {"norm"}
 
     def init_weights(self, pretrained=None):
+        if self.init_cfg["type"] == "Pretrained":
+            pretrained = self.init_cfg["checkpoint"]
         if isinstance(pretrained, str):
             self.apply(self._init_weights)
             logger = get_root_logger()
